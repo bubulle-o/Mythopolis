@@ -1,6 +1,4 @@
 import 'package:lore_keeper/services/database_helper.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:path/path.dart';
 import '../models/folder.dart';
 
 class FolderService {

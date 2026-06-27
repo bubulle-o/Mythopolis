@@ -1,4 +1,3 @@
-import 'package:lore_keeper/models/Folder.dart';
 import 'package:lore_keeper/models/note.dart';
 import 'package:lore_keeper/services/database_helper.dart';
 
@@ -13,23 +12,23 @@ class NoteService {
 
   Future<void> createNote(String folderName, String parentFolder, String? iconPath) async {
     final db = await DatabaseHelper().database;
-    List<Map<String, Object?>> nameOk = await db.rawQuery('select name from folders where parentFolder = ?', [parentFolder]);
+    List<Map<String, Object?>> nameOk = await db.rawQuery('select name from notes where parentFolder = ?', [parentFolder]);
 
     if(!nameOk.any((map) => map['name'] == folderName)){
     String id = await _generateId();
     Note note = Note(id, folderName, parentFolder, iconPath, null, null);
-    Map<String, dynamic> folderMap = note.toMap();
-    await db.insert('folders', folderMap);
+    Map<String, dynamic> noteMap = note.toMap();
+    await db.insert('notes', noteMap);
     }
     else{
-      throw Exception('Il existe déjà un dossier du même nom à cet emplacement');
+      throw Exception('Il existe déjà une note du même nom à cet emplacement');
     }
   }
 
   Future<String> _generateId() async {
     final db = await DatabaseHelper().database;
     String? lastId = (await db.rawQuery('select MAX(id) from notes')).first['MAX(id)'] as String? ;
-    int nextId = lastId == null ? 1 : int.parse(lastId.substring(7)) + 1; // Incrémente le compteur pour le nouvel ID
+    int nextId = lastId == null ? 1 : int.parse(lastId.substring(5)) + 1; // Incrémente le compteur pour le nouvel ID
     return "note_"+ nextId.toString().padLeft( 5, '0');
   }
 
@@ -57,7 +56,7 @@ class NoteService {
     
 
     if(!nameOk.any((map) => map['name'] == newName)){
-      await db.update('folders', 
+      await db.update('notes', 
       {'name': newName, 'parentFolder' : newParent},
       where : 'id = ?',
       whereArgs: [id]);
@@ -76,9 +75,9 @@ class NoteService {
     whereArgs: [id]);
   }
 
-  Future<List<Note>> getNoteFromFolder(Folder folder) async {
+  Future<List<Note>> getNotesFromFolder(String parentFolder) async {
     final db = await DatabaseHelper().database;
-    List<Map<String, Object?>> maps = await db.rawQuery('SELECT * FROM notes WHERE parentFolder = ?', [folder.id]);
+    List<Map<String, Object?>> maps = await db.rawQuery('SELECT * FROM notes WHERE parentFolder = ?', [parentFolder]);
     List<Note> notes = [];
     for (Map<String, Object?> data in maps) {
       notes.add(Note.fromMap(data));
@@ -86,9 +85,9 @@ class NoteService {
     return notes;
   }
 
-  Future<List<Note>> searchFolder(String query, Folder folder) async{
+  Future<List<Note>> searchNote(String query, String parentFolder) async{
     final db = await DatabaseHelper().database;
-    List<Map<String, Object?>> maps = await db.rawQuery('SELECT * FROM notes WHERE name LIKE ? AND parentFolder = ?',['%$query%' , folder.parentFolder]);
+    List<Map<String, Object?>> maps = await db.rawQuery('SELECT * FROM notes WHERE name LIKE ? AND parentFolder = ?',['%$query%' , parentFolder]);
     
     List<Note> notes = [];
     for (Map<String, Object?> data in maps) {
