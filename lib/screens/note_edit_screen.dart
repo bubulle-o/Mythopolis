@@ -3,6 +3,7 @@ import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:lore_keeper/models/note.dart';
 import 'package:lore_keeper/providers/note_provider.dart';
 import 'package:lore_keeper/providers/settings_provider.dart';
+import 'package:lore_keeper/screens/folder_screen.dart';
 import 'package:lore_keeper/utils/enum.dart';
 import 'package:provider/provider.dart';
  
@@ -60,6 +61,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         _showSaveDialog(context);
+
       },
       child : Scaffold(
         appBar: AppBar(
@@ -165,25 +167,23 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
      _saveNote();
   }
 
-  Future<void> _showSaveDialog(BuildContext context)async{
-    final TextEditingController controller = TextEditingController();
-    
+  Future<void> _showSaveDialog(BuildContext screenContext) async {
     showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Vous allez quitter la note. Voulez vous sauvegarder les modifications ?'),
+      context: screenContext,
+      builder: (dialogContext) => AlertDialog(  // ← nom différent !
+        title : Text('Vous alllez quitter la note. Voulez vous enregistrer les modifications ?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext), // ferme dialog
             child: Text('Non'),
           ),
           TextButton(
             onPressed: () async {
-              _saveNote();
-              Navigator.pop(context);
-              
+              await _saveNote();
+              Navigator.pop(dialogContext);   // ferme dialog
+              Navigator.pop(screenContext);   // ferme NoteEditScreen
+              Navigator.pop(screenContext);   // ferme NoteReadScreen
             },
-      
             child: Text('Oui'),
           ),
         ],

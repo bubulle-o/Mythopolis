@@ -55,7 +55,12 @@ class _FolderScreenState extends State<FolderScreen>
   Widget build(BuildContext context) {
     final folderProvider = context.watch<FolderProvider>();
     final noteProvider = context.watch<NoteProvider>();
-    
+
+    List<Object> allItems = [
+      ...folderProvider.getFolders(widget.folder.id),
+      ...noteProvider.getNotes(widget.folder.id),
+    ];
+        
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.folder.name),
@@ -85,10 +90,13 @@ class _FolderScreenState extends State<FolderScreen>
           // ── Onglet "Tout" ──────────────────────────────
           // TODO: mélanger dossiers + notes avec List<Object>
           ListView.builder(
-            itemCount: folderProvider.getFolders(widget.folder.id).length,
+            itemCount: allItems.length,
             itemBuilder: (context, index) {
-              final folder = folderProvider.getFolders(widget.folder.id)[index];
-              return _buildFolderTile(context, folder);
+              final item = allItems[index];
+              if (item is Folder) { return _buildFolderTile(context,item ); }
+              else if (item is Note) {return _buildNoteTile(context,item ); }
+              else {return SizedBox.shrink(); } // widget vide invisible
+
             },
           ),
 
