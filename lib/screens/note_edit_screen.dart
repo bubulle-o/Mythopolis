@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'package:lore_keeper/models/note.dart';
 import 'package:lore_keeper/providers/note_provider.dart';
-import 'package:lore_keeper/providers/settings_provider.dart';
-import 'package:lore_keeper/screens/folder_screen.dart';
-import 'package:lore_keeper/utils/enum.dart';
+import 'package:lore_keeper/screens/note_read_screen.dart';
 import 'package:provider/provider.dart';
- 
+import 'dart:convert';
+import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
+
+
+//////////////////////////////////////////////////////
+//                   WIDGET PRINCIPAL               //
+//////////////////////////////////////////////////////
+
 class NoteEditScreen extends StatefulWidget {
   final Note note;
 
@@ -17,176 +22,183 @@ class NoteEditScreen extends StatefulWidget {
 }
 
 class _NoteEditScreenState extends State<NoteEditScreen> {
-  
-  // Mode d'écriture actuel (classic ou markdown)
-  late NoteMode _writingMode;
-  
-  // Contrôleur du champ de texte — contient le texte tapé par l'utilisateur
-  late TextEditingController _controller;
 
-  // Contenu compilé affiché à l'utilisateur
-  late String _renderedContent ;
-  
-  // Contrôleur pour le Ctrl+Z / Ctrl+Y
-  late UndoHistoryController _undoController;
+  // Contrôleur Quill — gère le contenu ET l'historique Ctrl+Z nativement
+  late QuillController _quillController;
+
+
+  //////////////////////////////////////////////////////
+  //                 INITIALISATION                   //
+  //////////////////////////////////////////////////////
 
   @override
   void initState() {
     super.initState();
-    
-    // Lire le mode d'écriture préféré depuis les paramètres
-    _writingMode = context.read<SettingsProvider>().defaultWritingMode;
-    
-    // Initialiser le contrôleur avec le contenu existant de la note
-    _controller = TextEditingController(text: widget.note.content ?? '');
 
-    _renderedContent = widget.note.content ?? '' ;
-    
-    // Initialiser le contrôleur d'historique (Ctrl+Z)
-    _undoController = UndoHistoryController();
+    // Charger le contenu existant ou créer un document vide
+    final content = widget.note.content;
+    final doc = (content != null && content.isNotEmpty)
+        ? Document.fromJson(jsonDecode(content))
+        : Document();
+
+    _quillController = QuillController(
+      document: doc,
+      selection: const TextSelection.collapsed(offset: 0),
+    );
   }
 
   @override
   void dispose() {
-    // OBLIGATOIRE : libérer la mémoire des contrôleurs quand l'écran est détruit
-    _controller.dispose();
-    _undoController.dispose();
+    // OBLIGATOIRE : libérer la mémoire du contrôleur quand l'écran est détruit
+    _quillController.dispose();
     super.dispose();
   }
+
+
+  //////////////////////////////////////////////////////
+  //                     BUILD                        //
+  //////////////////////////////////////////////////////
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
+      // Intercepte le bouton retour — affiche le dialog de sauvegarde
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         _showSaveDialog(context);
-
       },
-      child : Scaffold(
+      child: Scaffold(
         appBar: AppBar(
           title: Text(widget.note.name),
           actions: [
-            // Bouton pour basculer entre classic et markdown
-            IconButton(
-              icon: Icon(
-                _writingMode == NoteMode.classic 
-                  ? Icons.code        // icône "code" quand on est en classic
-                  : Icons.edit,       // icône "edit" quand on est en markdown
-              ),
-              onPressed: _toggleWritingMode,
-            ),
             // Bouton enregistrer
             IconButton(
               icon: const Icon(Icons.save),
               onPressed: _saveNote,
             ),
-            
-
-            // Bouton compiler
-            if (_writingMode == NoteMode.markdown)
-              IconButton(
-                icon : Icon(Icons.play_arrow),
-                tooltip : 'compiler',
-                onPressed: _compile,
-              ),
+            IconButton(
+              icon: const Icon(Icons.remove_red_eye_rounded),
+              onPressed: () => _goToReadScreen(context),
+            ),
+        
           ],
         ),
-        body: _writingMode == NoteMode.classic 
-          ? _buildClassicEditor()
-          : _buildMarkdownEditor(),
+        body: _buildEditor(),
       ),
     );
   }
 
-  // Bascule entre classic et markdown
-  void _toggleWritingMode() {
-    setState(() {
-      _writingMode = _writingMode == NoteMode.classic 
-        ? NoteMode.markdown 
-        : NoteMode.classic;
-    });
-  }
 
-  // Sauvegarde le contenu dans la base de données
-  Future<void> _saveNote() async {
-    await context.read<NoteProvider>().changeNote(
-      widget.note.id,
-      null,              // on ne change pas le nom
-      null,              // On ne changera pas le dossier parent
-      _controller.text  // TODO: adapter changeNote pour accepter le contenu
-    );
-  }
+  //////////////////////////////////////////////////////
+  //                    ÉDITEUR                       //
+  //////////////////////////////////////////////////////
 
-  // Éditeur classique — TextField plein écran + barre d'outils (à faire)
-  Widget _buildClassicEditor() {
-    return TextField(
-      controller: _controller,
-      undoController: _undoController,
-      maxLines: null,     // permet les sauts de ligne infinis
-      expands: true,      // occupe tout l'espace disponible
-      decoration: const InputDecoration(
-        border: InputBorder.none,
-        contentPadding: EdgeInsets.all(16),
-      ),
-    );
-  }
-
-  // Éditeur Markdown — écran splitté gauche/droite
-  Widget _buildMarkdownEditor() {
-    return Row(
+  /// Éditeur Quill avec barre d'outils et marges latérales
+  Widget _buildEditor() {
+    return Column(
       children: [
-        // Gauche : éditeur de texte brut
-        Expanded(
-          child: TextField(
-            controller: _controller,
-            undoController: _undoController,
-            maxLines: null,
-            expands: true,
-            decoration: const InputDecoration(
-              border: InputBorder.none,
-              contentPadding: EdgeInsets.all(16),
+        // Barre d'outils de mise en forme — prend toute la largeur
+        QuillSimpleToolbar(
+          controller: _quillController,
+          config: QuillSimpleToolbarConfig(
+            embedButtons: FlutterQuillEmbeds.toolbarButtons(),
+            buttonOptions: QuillSimpleToolbarButtonOptions(
+              fontFamily: QuillToolbarFontFamilyButtonOptions(
+                items: const {
+                  'Cardo': 'Cardo',
+                  'EB Garamond': 'EBGaramond',
+                  'Cinzel': 'Cinzel',
+                  'MedievalSharp': 'MedievalSharp',
+                  'UnifrakturMaguntia': 'UnifrakturMaguntia',
+                  'Pirata One': 'PirataOne',
+                  'Orbitron': 'Orbitron',
+                  'Audiowide': 'Audiowide',
+                  'Lexend': 'Lexend',
+                },
+              ),
             ),
           ),
         ),
-        // Séparateur vertical
-        const VerticalDivider(width: 1),
-        // Droite : rendu Markdown
+
+        
+
+        // Zone d'édition avec marges latérales
         Expanded(
-          child: Markdown(data: _renderedContent),
+          child: Container(
+            // Marges latérales pour aérer l'écriture
+            padding: const EdgeInsets.symmetric(
+              horizontal: 64,  // marge gauche/droite
+              vertical: 24,    // marge haut/bas
+            ),
+            child: QuillEditor.basic(
+              controller: _quillController,
+              config: QuillEditorConfig(
+                embedBuilders: FlutterQuillEmbeds.editorBuilders(),
+              ),
+            ),
+          ),
         ),
       ],
     );
   }
 
-  Future<void> _compile() async{
-     setState(() {
-      // ici tu modifies tes variables
-      _renderedContent = _controller.text;
-    });
-     _saveNote();
+
+  //////////////////////////////////////////////////////
+  //                  SAUVEGARDE                      //
+  //////////////////////////////////////////////////////
+
+  /// Sauvegarde le contenu Delta JSON dans la base de données
+  Future<void> _saveNote() async {
+    await context.read<NoteProvider>().changeNote(
+      widget.note.id,
+      null,  // on ne change pas le nom
+      null,  // on ne change pas le dossier parent
+      jsonEncode(_quillController.document.toDelta().toJson()),
+    );
   }
 
+  /// Dialog affiché quand l'utilisateur quitte sans sauvegarder
   Future<void> _showSaveDialog(BuildContext screenContext) async {
     showDialog(
       context: screenContext,
-      builder: (dialogContext) => AlertDialog(  // ← nom différent !
-        title : Text('Vous alllez quitter la note. Voulez vous enregistrer les modifications ?'),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Voulez-vous enregistrer les modifications ?'),
         actions: [
+          // Quitter sans sauvegarder
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext), // ferme dialog
-            child: Text('Non'),
+            onPressed: () {
+              Navigator.pop(dialogContext); // ferme le dialog
+              Navigator.pop(screenContext); // ferme NoteEditScreen
+              Navigator.pop(screenContext); // ferme NoteReadScreen → retour FolderScreen
+            },
+            child: const Text('Non'),
           ),
+          // Sauvegarder puis quitter
           TextButton(
             onPressed: () async {
               await _saveNote();
-              Navigator.pop(dialogContext);   // ferme dialog
-              Navigator.pop(screenContext);   // ferme NoteEditScreen
-              Navigator.pop(screenContext);   // ferme NoteReadScreen
+              Navigator.pop(dialogContext); // ferme le dialog
+              Navigator.pop(screenContext); // ferme NoteEditScreen
+              Navigator.pop(screenContext); // ferme NoteReadScreen → retour FolderScreen
             },
-            child: Text('Oui'),
+            child: const Text('Oui'),
           ),
         ],
+      ),
+    );
+  }
+
+  //////////////////////////////////////////////////////
+  //                   NAVIGATION                     //
+  //////////////////////////////////////////////////////
+
+  /// Navigation vers l'écran d'édition
+  void _goToReadScreen(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => NoteReadScreen(note: widget.note),
       ),
     );
   }

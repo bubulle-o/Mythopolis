@@ -1,8 +1,7 @@
 // Modes d'affichage d'une note
 enum NoteMode {
   reading,   // lecture seule
-  classic,   // éditeur avec barre d'outils
-  markdown   // éditeur markdown brut avec rendu splitté
+  writing    // édition WYSIWYG
 }
 
 // Thèmes de l'application
