@@ -16,6 +16,8 @@ dependencies:
   provider: ^6.1.5+1
   flutter_quill: ^11.5.1
   flutter_quill_extensions: ^11.0.0
+  path_provider: ^2.1.6
+  image_picker: ^1.2.3
 dev_dependencies:
   flutter_test:
     sdk: flutter

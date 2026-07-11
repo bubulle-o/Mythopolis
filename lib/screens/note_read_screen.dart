@@ -8,6 +8,7 @@ import 'package:mythopolis/screens/note_edit_screen.dart';
 import 'package:mythopolis/services/folder_service.dart';
 import 'dart:convert';
 import 'package:mythopolis/services/note_service.dart';
+import 'dart:io'; 
 
 
 //////////////////////////////////////////////////////
@@ -74,20 +75,34 @@ class _NoteReadScreenState extends State<NoteReadScreen> {
           ),
         ],
       ),
-      // Affichage du contenu en lecture seule avec marges
-      // TODO: à terme, deux pages A4 côte à côte façon livre
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 64, vertical: 24),
-        child: QuillEditor.basic(
-          controller: _quillController,
-          config: QuillEditorConfig(
-            onLaunchUrl: _handleLinkTap,
-            embedBuilders: FlutterQuillEmbeds.editorBuilders(),
-          ),
-        ),
-      ),
+      body : Column(
+        children: [
+          // Affichage de la bannière
+          if (widget.note.bannerPath != null)
+            Container(
+              height: 135,
+              width: double.infinity,
+              child: Image.file(File(widget.note.bannerPath!), fit: BoxFit.cover),
+              
+            ), 
+          // Affichage du contenu en lecture seule avec marges
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 64, vertical: 24),
+              child: QuillEditor.basic(
+                controller: _quillController,
+                config: QuillEditorConfig(
+                  onLaunchUrl: _handleLinkTap,
+                  embedBuilders: FlutterQuillEmbeds.editorBuilders(),
+                ),
+              ),
+            ),
+          )
+        ]
+      )
     );
   }
+
 
 
   //////////////////////////////////////////////////////

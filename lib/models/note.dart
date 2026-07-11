@@ -12,8 +12,9 @@ class Note {
   String? iconPath;
   String? content;   // Delta JSON produit par flutter_quill
   String? bookmarks; // signets éventuels (non encore implémentés)
+  String? bannerPath;
 
-  Note(this.id, this.name, this.parentFolder, this.iconPath, this.content, this.bookmarks);
+  Note(this.id, this.name, this.parentFolder, this.iconPath, this.content, this.bookmarks, this.bannerPath);
 
 
   //////////////////////////////////////////////////////
@@ -41,6 +42,7 @@ class Note {
       data["iconPath"],
       data["content"],
       data["bookmarks"],
+      data["bannerPath"]
     );
   }
 }

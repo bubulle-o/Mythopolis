@@ -1,5 +1,9 @@
 import 'package:mythopolis/models/note.dart';
 import 'package:mythopolis/services/database_helper.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';                           
+import 'package:path_provider/path_provider.dart';  
+
 
 
 //////////////////////////////////////////////////////
@@ -28,7 +32,7 @@ class NoteService {
 
     if (!nameOk.any((map) => map['name'] == folderName)) {
       String id = await _generateId();
-      Note note = Note(id, folderName, parentFolder, iconPath, null, null);
+      Note note = Note(id, folderName, parentFolder, iconPath, null, null, null);
       await db.insert('notes', note.toMap());
     } else {
       throw Exception('Il existe déjà une note du même nom à cet emplacement');
@@ -85,6 +89,58 @@ class NoteService {
     await db.delete('notes', where: 'id = ?', whereArgs: [id]);
   }
 
+  ///////////////////////////////////////////////////
+  //                 Bannière                      //
+  ///////////////////////////////////////////////////
+
+  Future<void> pickBanner(String id, XFile? image) async{
+    final db = await DatabaseHelper().database;
+    if(image == null){
+      return;
+      }
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final bannersDir = Directory('${appDir.path}/banners');
+    await bannersDir.create(recursive: true);
+
+    final destination = '${bannersDir.path}/$id.jpg';
+
+    Note note = await loadNote(id);
+    if (note.bannerPath !=null ){
+      await File(note.bannerPath!).delete();
+      }
+
+    await File(image.path).copy(destination);
+
+    await db.update(
+        'notes',
+        {'bannerPath': destination},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+  } 
+
+
+  Future<void> removeBanner(String id) async{
+    final db = await DatabaseHelper().database;
+
+    Note note = await loadNote(id);
+    
+    if (note.bannerPath !=null ){
+      await File(note.bannerPath!).delete();
+      }
+    await db.update(
+        'notes',
+        {'bannerPath': null},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+  }
+
+
+  Future<void> cropBanner(String id) async{
+    final db = await DatabaseHelper().database;
+  }
 
   //////////////////////////////////////////////////////
   //                   RECHERCHE                      //

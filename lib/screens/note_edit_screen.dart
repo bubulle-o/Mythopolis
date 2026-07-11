@@ -6,7 +6,8 @@ import 'package:mythopolis/screens/note_read_screen.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
-
+import 'package:image_picker/image_picker.dart';
+import 'dart:io'; 
 
 //////////////////////////////////////////////////////
 //                   WIDGET PRINCIPAL               //
@@ -81,6 +82,29 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
               icon: const Icon(Icons.remove_red_eye_rounded),
               onPressed: () => _goToReadScreen(context),
             ),
+            PopupMenuButton<String>(
+              icon: Icon(Icons.image),  // ou tout autre widget
+              onSelected: (value) {
+                // value = la string du PopupMenuItem sélectionné
+                if (value == 'add') _pickBanner();
+                if (value == 'remove') _removeBanner();
+                if (value == 'crop') _cropBanner();
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  value: 'add',
+                  child: Text('Ajouter un bandeau'),
+                ),
+                PopupMenuItem(
+                  value: 'remove',
+                  child: Text('Supprimer'),
+                ),
+                PopupMenuItem(
+                  value: 'crop',
+                  child: Text('Recadrer'),
+                ),
+              ],
+            )
           ],
         ),
         body: _buildEditor(),
@@ -119,7 +143,15 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
             ),
           ),
         ),
-
+        
+        if (widget.note.bannerPath != null)
+            Container(
+              height: 135,
+              width: double.infinity,
+              child: Image.file(File(widget.note.bannerPath!), fit: BoxFit.cover),
+              
+            ), 
+          // Affichage du contenu en lecture seule avec marges
         // Zone d'édition avec marges latérales
         Expanded(
           child: Container(
@@ -140,6 +172,26 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     );
   }
 
+
+  ///////////////////////////////////////////////////
+  //                 Bannière                      //
+  ///////////////////////////////////////////////////
+
+  Future<void> _pickBanner() async{
+    final picker = ImagePicker();
+    XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    await context.read<NoteProvider>().pickBanner(widget.note.id,image);
+  } 
+
+
+  Future<void> _removeBanner() async{
+    await context.read<NoteProvider>().removeBanner(widget.note.id);
+  }
+
+
+  Future<void> _cropBanner() async{
+    await context.read<NoteProvider>().cropBanner(widget.note.id);
+  }
 
   //////////////////////////////////////////////////////
   //                  SAUVEGARDE                      //
@@ -193,6 +245,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
 
   /// Navigation vers l'écran de lecture
   void _goToReadScreen(BuildContext context) {
+    _saveNote();
     Navigator.push(
       context,
       MaterialPageRoute(

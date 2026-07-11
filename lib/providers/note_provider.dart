@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mythopolis/services/note_service.dart';
 import '../models/note.dart';
-
+import 'package:image_picker/image_picker.dart';
 
 //////////////////////////////////////////////////////
 //                    PROVIDER                      //
@@ -75,7 +75,26 @@ class NoteProvider extends ChangeNotifier {
     await loadNotes(parentFolder);
     notifyListeners();
   }
+  ///////////////////////////////////////////////////
+  //                 Bannière                      //
+  ///////////////////////////////////////////////////
 
+  Future<void> pickBanner(String id, XFile? image) async{
+    await _service.pickBanner(id, image);
+    notifyListeners();
+  } 
+
+
+  Future<void> removeBanner(String id) async{
+    await _service.removeBanner(id);
+    notifyListeners();
+  }
+
+
+  Future<void> cropBanner(String id) async{
+    await _service.cropBanner(id);
+    notifyListeners();
+  }
 
   //////////////////////////////////////////////////////
   //                   RECHERCHE                      //
