@@ -3,11 +3,14 @@ import 'package:flutter_quill/flutter_quill.dart';
 import 'package:mythopolis/models/note.dart';
 import 'package:mythopolis/providers/note_provider.dart';
 import 'package:mythopolis/screens/note_read_screen.dart';
+import 'package:mythopolis/services/note_service.dart';
+import 'package:mythopolis/utils/enum.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io'; 
+
 
 //////////////////////////////////////////////////////
 //                   WIDGET PRINCIPAL               //
@@ -26,6 +29,9 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
 
   // Contrôleur Quill — gère le contenu ET l'historique Ctrl+Z nativement
   late QuillController _quillController;
+  late int _selectedHorizontal;
+  late int _selectedVertical;
+  late Note _currentNote;
 
 
   //////////////////////////////////////////////////////
@@ -35,6 +41,8 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   @override
   void initState() {
     super.initState();
+
+    _currentNote= widget.note;
 
     // Charger le contenu existant ou créer un document vide
     final content = widget.note.content;
@@ -46,6 +54,9 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
       document: doc,
       selection: const TextSelection.collapsed(offset: 0),
     );
+
+    _selectedHorizontal = divideAlignmentH(widget.note.bannerAlignment);
+    _selectedVertical = divideAlignmentV(widget.note.bannerAlignment);
   }
 
   @override
@@ -71,7 +82,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
       },
       child: Scaffold(
         appBar: AppBar(
-          title: Text(widget.note.name),
+          title: Text(_currentNote.name),
           actions: [
             // Bouton enregistrer
             IconButton(
@@ -88,7 +99,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                 // value = la string du PopupMenuItem sélectionné
                 if (value == 'add') _pickBanner();
                 if (value == 'remove') _removeBanner();
-                if (value == 'crop') _cropBanner();
+                if (value == 'crop') _changeBannerAlignment();
               },
               itemBuilder: (context) => [
                 PopupMenuItem(
@@ -144,11 +155,11 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
           ),
         ),
         
-        if (widget.note.bannerPath != null)
+        if (_currentNote.bannerPath != null)
             Container(
               height: 135,
               width: double.infinity,
-              child: Image.file(File(widget.note.bannerPath!), fit: BoxFit.cover),
+              child: Image.file(File(_currentNote.bannerPath!), key: ValueKey(DateTime.now().millisecondsSinceEpoch), fit: BoxFit.cover, alignment: _currentNote.bannerAlignment.toFlutterAlignment()),
               
             ), 
           // Affichage du contenu en lecture seule avec marges
@@ -172,6 +183,11 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     );
   }
 
+  //////////////////////////////////////////////////
+  //                    LENS                      //
+  //////////////////////////////////////////////////
+
+
 
   ///////////////////////////////////////////////////
   //                 Bannière                      //
@@ -180,18 +196,207 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   Future<void> _pickBanner() async{
     final picker = ImagePicker();
     XFile? image = await picker.pickImage(source: ImageSource.gallery);
-    await context.read<NoteProvider>().pickBanner(widget.note.id,image);
+    await context.read<NoteProvider>().pickBanner(_currentNote.id,image);
+    // Recharger et rafraîchir
+    final freshNote = await NoteService().loadNote(_currentNote.id);
+    setState(() {
+      _currentNote = freshNote;
+    });
+    imageCache.clear();
+    imageCache.clearLiveImages();
   } 
 
 
   Future<void> _removeBanner() async{
-    await context.read<NoteProvider>().removeBanner(widget.note.id);
+    await context.read<NoteProvider>().removeBanner(_currentNote.id);
+    // Recharger et rafraîchir
+    final freshNote = await NoteService().loadNote(_currentNote.id);
+    setState(() {
+      _currentNote = freshNote;
+    });
+    imageCache.clear();
+    imageCache.clearLiveImages();
+    
   }
 
 
-  Future<void> _cropBanner() async{
-    await context.read<NoteProvider>().cropBanner(widget.note.id);
+  Future<void> _changeBannerAlignment() async{
+    _selectedHorizontal = divideAlignmentH(_currentNote.bannerAlignment);
+    _selectedVertical = divideAlignmentV(_currentNote.bannerAlignment);
+    showDialog(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, dialogSetState) => AlertDialog(
+          title: Text("Changer l'alignement de la banière"),
+          content: SingleChildScrollView(
+            child: Column(
+              children: [
+                RadioGroup<int>(
+                  groupValue: _selectedHorizontal,
+                  onChanged: (value) => dialogSetState(() => _selectedHorizontal = value!),
+                  child: Column(
+                    children: [
+                      RadioListTile<int>(
+                        title: Text('Gauche'),
+                        value: 0,
+                      ),
+                      RadioListTile<int>(
+                        title: Text('Centre'),
+                        value: 1,
+                      ),
+                      RadioListTile<int>(
+                        title: Text('Droite'),
+                        value: 2,
+                      ),
+                    ],
+                  ),
+                ),
+
+                Divider(),
+
+                RadioGroup<int>(
+                  groupValue: _selectedVertical,
+                  onChanged: (value) => dialogSetState (() => _selectedVertical = value!),
+                  child: Column(
+                    children: [
+                      RadioListTile<int>(
+                        title: Text('Haut'),
+                        value: 0,
+                      ),
+                      RadioListTile<int>(
+                        title: Text('Centre'),
+                        value: 1,
+                      ),
+                      RadioListTile<int>(
+                        title: Text('Bas'),
+                        value: 2,
+                      ),
+                    ],
+                  ),
+                ),// bas
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () async {
+                try {
+                  BannerAlignment alignment = combineAlignment(_selectedHorizontal,_selectedVertical);
+                  await context.read<NoteProvider>().changeBannerAlignment(_currentNote.id, alignment);
+                  final freshNote = await NoteService().loadNote(_currentNote.id);
+                  setState(() {
+                    _currentNote = freshNote;
+                  });
+                  imageCache.clear();
+                  imageCache.clearLiveImages();
+                  Navigator.pop(dialogContext);
+                } catch (e) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text(e.toString())),
+                  );
+                }
+                
+              },
+              child: Text('Valider'),
+            ),
+          ],
+        ),
+      )
+    );
   }
+
+  // switch sur les 9 combinaisons possibles
+  BannerAlignment combineAlignment(int horizontal, int vertical) {
+    if(horizontal<0 || horizontal>2 ||vertical<0 || vertical>2){
+      return _currentNote.bannerAlignment;
+    }
+
+    if(vertical == 0){
+      if(horizontal == 0){
+        return BannerAlignment.topLeft;
+      }
+
+      else if(horizontal == 1){
+        return BannerAlignment.topCenter;
+      }
+
+      else{
+        return BannerAlignment.topRight;
+      }
+    
+    }
+
+    if(vertical == 1){
+      if(horizontal == 0){
+        return BannerAlignment.centerLeft;
+      }
+
+      else if(horizontal == 1){
+        return BannerAlignment.center;
+      }
+
+      else{
+        return BannerAlignment.centerRight;
+      }
+    
+    }
+
+    else {
+      if(horizontal == 0){
+        return BannerAlignment.bottomLeft;
+      }
+
+      else if(horizontal == 1){
+        return BannerAlignment.bottomCenter;
+      }
+
+      else{
+        return BannerAlignment.bottomRight;
+      }
+    
+    }
+    
+  } 
+
+  int divideAlignmentH (BannerAlignment alignement) {
+    
+    if(alignement== BannerAlignment.topLeft || alignement== BannerAlignment.topCenter || alignement== BannerAlignment.topRight){
+      return 0;
+    
+    }
+
+    else if(alignement== BannerAlignment.centerLeft || alignement== BannerAlignment.center || alignement== BannerAlignment.centerRight){
+      return 1;
+    
+    }
+
+    else{
+      return 2;
+    }
+    
+  } 
+
+  int divideAlignmentV (BannerAlignment alignement) {
+    
+    if(alignement== BannerAlignment.topLeft || alignement== BannerAlignment.centerLeft || alignement== BannerAlignment.bottomLeft){
+      return 0;
+    
+    }
+
+    else if(alignement== BannerAlignment.topCenter || alignement== BannerAlignment.center || alignement== BannerAlignment.bottomCenter){
+      return 1;
+    
+    }
+
+    else{
+      return 2;
+    }
+    
+  } 
 
   //////////////////////////////////////////////////////
   //                  SAUVEGARDE                      //
@@ -200,10 +405,17 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   /// Sauvegarde le contenu Delta JSON dans la base de données
   Future<void> _saveNote() async {
     await context.read<NoteProvider>().changeNote(
-      widget.note.id,
+      _currentNote.id,
       null,  // on ne change pas le nom
       null,  // on ne change pas le dossier parent
       jsonEncode(_quillController.document.toDelta().toJson()),
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Note sauvegardée'),
+        duration: Duration(seconds: 2),
+      ),
     );
   }
 
@@ -244,12 +456,13 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   //////////////////////////////////////////////////////
 
   /// Navigation vers l'écran de lecture
-  void _goToReadScreen(BuildContext context) {
-    _saveNote();
-    Navigator.push(
+  Future<void> _goToReadScreen(BuildContext context) async{
+    await _saveNote();
+    Note freshNote = await NoteService().loadNote(_currentNote.id);
+    Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (context) => NoteReadScreen(note: widget.note),
+        builder: (context) => NoteReadScreen(note: freshNote),
       ),
     );
   }

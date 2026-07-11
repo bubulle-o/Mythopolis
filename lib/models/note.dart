@@ -1,3 +1,5 @@
+import 'package:mythopolis/utils/enum.dart';
+
 //////////////////////////////////////////////////////
 //                     MODÈLE                       //
 //////////////////////////////////////////////////////
@@ -13,8 +15,9 @@ class Note {
   String? content;   // Delta JSON produit par flutter_quill
   String? bookmarks; // signets éventuels (non encore implémentés)
   String? bannerPath;
+  BannerAlignment  bannerAlignment;
 
-  Note(this.id, this.name, this.parentFolder, this.iconPath, this.content, this.bookmarks, this.bannerPath);
+  Note(this.id, this.name, this.parentFolder, this.iconPath, this.content, this.bookmarks, this.bannerPath, this.bannerAlignment);
 
 
   //////////////////////////////////////////////////////
@@ -30,6 +33,8 @@ class Note {
       "iconPath": iconPath,
       "content": content,
       "bookmarks": bookmarks,
+      "bannerPath": bannerPath,
+      "bannerAlignment" : bannerAlignment.name,
     };
   }
 
@@ -42,7 +47,8 @@ class Note {
       data["iconPath"],
       data["content"],
       data["bookmarks"],
-      data["bannerPath"]
+      data["bannerPath"],
+      BannerAlignment.values.firstWhere((e) => e.name == data["bannerAlignment"])
     );
   }
 }

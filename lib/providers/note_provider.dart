@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mythopolis/services/note_service.dart';
+import 'package:mythopolis/utils/enum.dart';
 import '../models/note.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -91,8 +92,8 @@ class NoteProvider extends ChangeNotifier {
   }
 
 
-  Future<void> cropBanner(String id) async{
-    await _service.cropBanner(id);
+  Future<void> changeBannerAlignment(String id, BannerAlignment alignment) async{
+    await _service.changeBannerAlignment(id, alignment);
     notifyListeners();
   }
 

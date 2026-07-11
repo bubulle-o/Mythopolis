@@ -68,6 +68,7 @@ class DatabaseHelper {
         content TEXT,
         bookmarks TEXT,
         bannerPath TEXT,
+        bannerAlignment TEXT NOT NULL,
         FOREIGN KEY (parentFolder) REFERENCES folders(id) ON DELETE CASCADE
       )
     ''');

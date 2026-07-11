@@ -8,7 +8,9 @@ import 'package:mythopolis/screens/note_edit_screen.dart';
 import 'package:mythopolis/services/folder_service.dart';
 import 'dart:convert';
 import 'package:mythopolis/services/note_service.dart';
-import 'dart:io'; 
+import 'dart:io';
+
+import 'package:mythopolis/utils/enum.dart'; 
 
 
 //////////////////////////////////////////////////////
@@ -82,7 +84,7 @@ class _NoteReadScreenState extends State<NoteReadScreen> {
             Container(
               height: 135,
               width: double.infinity,
-              child: Image.file(File(widget.note.bannerPath!), fit: BoxFit.cover),
+              child: Image.file(File(widget.note.bannerPath!), fit: BoxFit.cover,  alignment: widget.note.bannerAlignment.toFlutterAlignment()),
               
             ), 
           // Affichage du contenu en lecture seule avec marges
@@ -110,8 +112,8 @@ class _NoteReadScreenState extends State<NoteReadScreen> {
   //////////////////////////////////////////////////////
 
   /// Navigation vers l'écran d'édition
-  void _goToEditScreen(BuildContext context) {
-    Navigator.push(
+  Future<void> _goToEditScreen(BuildContext context) async{
+    Navigator.pushReplacement(
       context,
       MaterialPageRoute(
         builder: (context) => NoteEditScreen(note: widget.note),

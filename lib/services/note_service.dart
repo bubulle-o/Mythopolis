@@ -2,13 +2,15 @@ import 'package:mythopolis/models/note.dart';
 import 'package:mythopolis/services/database_helper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';                           
-import 'package:path_provider/path_provider.dart';  
+import 'package:path_provider/path_provider.dart'; 
+import 'package:mythopolis/utils/enum.dart';
 
 
 
 //////////////////////////////////////////////////////
 //                    SINGLETON                     //
 //////////////////////////////////////////////////////
+
 
 /// Service responsable de toutes les opérations CRUD sur les notes.
 /// Communique directement avec la base de données via DatabaseHelper.
@@ -32,7 +34,7 @@ class NoteService {
 
     if (!nameOk.any((map) => map['name'] == folderName)) {
       String id = await _generateId();
-      Note note = Note(id, folderName, parentFolder, iconPath, null, null, null);
+      Note note = Note(id, folderName, parentFolder, iconPath, null, null, null, BannerAlignment.center);
       await db.insert('notes', note.toMap());
     } else {
       throw Exception('Il existe déjà une note du même nom à cet emplacement');
@@ -125,7 +127,7 @@ class NoteService {
     final db = await DatabaseHelper().database;
 
     Note note = await loadNote(id);
-    
+
     if (note.bannerPath !=null ){
       await File(note.bannerPath!).delete();
       }
@@ -138,8 +140,17 @@ class NoteService {
   }
 
 
-  Future<void> cropBanner(String id) async{
+
+
+  
+  Future<void> changeBannerAlignment(String id, BannerAlignment alignment) async{
     final db = await DatabaseHelper().database;
+    await db.update(
+        'notes',
+        {'bannerAlignment': alignment.name},
+        where: 'id = ?',
+        whereArgs: [id],
+      );
   }
 
   //////////////////////////////////////////////////////
