@@ -582,7 +582,7 @@ class _FolderScreenState extends State<FolderScreen>
   /// Construit l'arborescence en excluant un dossier et ses descendants
   /// Utilisé pour le déplacement de dossiers
   List<Map<String, dynamic>> _buildFolderTree(
-      List<Folder> allFolders, String? parentId, int depth, String excludeId) {
+    List<Folder> allFolders, String? parentId, int depth, String excludeId) {
     List<Map<String, dynamic>> result = [];
     for (Folder folder in allFolders) {
       if (folder.parentFolder == parentId && folder.id != excludeId) {

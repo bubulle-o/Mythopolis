@@ -35,6 +35,11 @@ class NoteProvider extends ChangeNotifier {
     return _searchResults;
   }
 
+    /// Retourne tous les dossiers (utilisé pour construire l'arbre de déplacement).
+  Future<List<Note>> getAllNotes() async {
+    return await _service.getAllNotes();
+  }
+
 
   //////////////////////////////////////////////////////
   //                    ACTIONS                       //

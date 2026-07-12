@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:mythopolis/models/folder.dart';
 import 'package:mythopolis/models/note.dart';
+import 'package:mythopolis/models/sheet.dart';
+import 'package:mythopolis/providers/folder_provider.dart';
 import 'package:mythopolis/providers/note_provider.dart';
 import 'package:mythopolis/screens/note_read_screen.dart';
 import 'package:mythopolis/services/note_service.dart';
@@ -137,6 +140,14 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
           controller: _quillController,
           config: QuillSimpleToolbarConfig(
             embedButtons: FlutterQuillEmbeds.toolbarButtons(),
+            // Bouton custom pour insérer un lien interne (note/dossier)
+            customButtons: [
+              QuillToolbarCustomButtonOptions(
+                icon: const Icon(Icons.link_rounded),
+                tooltip: 'Lien interne',
+                onPressed: () => _showLinkPicker(context),
+              ),
+            ],
             buttonOptions: QuillSimpleToolbarButtonOptions(
               fontFamily: QuillToolbarFontFamilyButtonOptions(
                 items: const {
@@ -183,11 +194,121 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     );
   }
 
-  //////////////////////////////////////////////////
-  //                    LENS                      //
-  //////////////////////////////////////////////////
+  ///////////////////////////////////////////////////
+  //                    LiENS                      //
+  ///////////////////////////////////////////////////
+  
+  void _showLinkPicker(BuildContext dialogContext) async {
+    List<Folder> allFolders = await dialogContext.read<FolderProvider>().getAllFolders();
+    List<Note> allNotes  = await dialogContext.read<NoteProvider>().getAllNotes();
+    List<Map<String, dynamic>> tree = _buildWholeTree(allFolders, allNotes, null, 0);
+    final TextEditingController controller = TextEditingController();
+    String selectedId= '';
 
+    showDialog(
+      context: dialogContext,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setState) => AlertDialog(
+          title: Text('Lien vers...'),
+          content: SizedBox(
+            width: 300,
+            height: 400,
+            child: Column(
+              children: [
+                TextField(
+                  controller: controller,
+                  decoration: InputDecoration(hintText: 'Nom affiché'),
+                ),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      ...tree.map((item) {
+                        int depth = item['depth'];
+                        
+                        if(item['type'] == 'folder'){
+                          Folder f = item['item'];
+                          return ListTile(
+                            contentPadding: EdgeInsets.only(left: 16.0 + depth * 20),
+                            leading: Icon(Icons.folder),
+                            title: Text(f.name),
+                            selected: selectedId == f.id,
+                            onTap: () => setState(() => selectedId = f.id),
+                          );
+                        }
 
+                        else {
+                          Note n = item['item'];
+                          return ListTile(
+                            contentPadding: EdgeInsets.only(left: 16.0 + depth * 20),
+                            leading: Icon(Icons.note),
+                            title: Text(n.name),
+                            selected: selectedId == n.id,
+                            onTap: () => setState(() => selectedId = n.id),
+                          );
+                        }
+                                          
+                      }),
+                    ]
+                  )
+                )
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: Text('Annuler'),
+            ),
+            TextButton(
+              onPressed: () async {
+                try {
+                  _insertLink(controller.text, selectedId);
+                  Navigator.pop(dialogContext);
+                } catch (e) {
+                  ScaffoldMessenger.of(dialogContext).showSnackBar(
+                    SnackBar(content: Text(e.toString())),
+                  );
+                }
+              },
+              child: Text('Insérer'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Construit l'arborescence complète sans exclusion
+  List<Map<String, dynamic>> _buildWholeTree( List<Folder> allFolders, List<Note> allNotes, String? parentId, int depth) {
+    List<Map<String, dynamic>> result = [];
+    for (Note note in allNotes){
+      if (note.parentFolder == parentId) {
+        result.add({'item': note, 'depth': depth, 'type' : 'note'});
+      }
+    }
+
+    for (Folder folder in allFolders) {
+      if (folder.parentFolder == parentId) {
+        result.add({'item': folder, 'depth': depth, 'type' : 'folder'});
+        result.addAll(_buildWholeTree(allFolders, allNotes,  folder.id, depth + 1));
+      }
+    }
+    return result;
+  }
+
+  void _insertLink(String nom, String id) {
+    _quillController.replaceText(
+      _quillController.selection.baseOffset,
+      _quillController.selection.extentOffset - _quillController.selection.baseOffset,
+      nom,
+      TextSelection.collapsed(offset: _quillController.selection.baseOffset + nom.length),
+    );
+    _quillController.formatText(
+      _quillController.selection.baseOffset - nom.length,
+      nom.length,
+      LinkAttribute('https://$id'),
+    );
+  }
 
   ///////////////////////////////////////////////////
   //                 Bannière                      //

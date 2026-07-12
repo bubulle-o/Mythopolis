@@ -173,4 +173,10 @@ class NoteService {
         ['%$query%', parentFolder]);
     return maps.map((data) => Note.fromMap(data)).toList();
   }
+
+  Future<List<Note>> getAllNotes() async {
+    final db = await DatabaseHelper().database;
+    List<Map<String, Object?>> maps = await db.rawQuery('SELECT * FROM notes');
+    return maps.map((data) => Note.fromMap(data)).toList();
+  }
 }
