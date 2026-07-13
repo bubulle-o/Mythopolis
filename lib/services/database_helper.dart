@@ -72,5 +72,93 @@ class DatabaseHelper {
         FOREIGN KEY (parentFolder) REFERENCES folders(id) ON DELETE CASCADE
       )
     ''');
+
+    await db.execute('''
+      CREATE TABLE template(
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        canvasHeight INTEGER NOT NULL,
+        canvasWidth INTEGER NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE rating(
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        emptyPath TEXT NOT NULL,
+        fullPath TEXT NOT NULL
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE sheet(
+        id TEXT PRIMARY KEY
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE page(
+        id TEXT PRIMARY KEY,
+        parentTemplate TEXT,
+        parentSheet TEXT,
+        backgroundPath TEXT,
+        zOrder REAL NOT NULL,
+        FOREIGN KEY (parentTemplate) REFERENCES template(id) ON DELETE CASCADE,
+        FOREIGN KEY (parentSheet) REFERENCES sheet(id) ON DELETE CASCADE,
+        CHECK (
+          (parentTemplate IS NOT NULL AND parentSheet IS NULL)
+          OR
+          (parentTemplate IS NULL AND parentSheet IS NOT NULL)
+        )
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE textZone(
+        id TEXT PRIMARY KEY,
+        parentPage TEXT NOT NULL,
+        content TEXT,
+        height REAL NOT NULL,
+        width REAL NOT NULL,
+        topLeftCornerX REAL NOT NULL,
+        topLeftCornerY REAL NOT NULL,
+        isLocked INTEGER NOT NULL,
+        zOrder REAL NOT NULL,
+        FOREIGN KEY (parentPage) REFERENCES page(id) ON DELETE CASCADE
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE photoZone(
+        id TEXT PRIMARY KEY,
+        parentPage TEXT NOT NULL,
+        shapePath TEXT,
+        photoPath TEXT,
+        height REAL NOT NULL,
+        width REAL NOT NULL,
+        topLeftCornerX REAL NOT NULL,
+        topLeftCornerY REAL NOT NULL,
+        zOrder REAL NOT NULL,
+        FOREIGN KEY (parentPage) REFERENCES page(id) ON DELETE CASCADE
+      )
+    ''');
+
+    await db.execute('''
+      CREATE TABLE ratingZone(
+        id TEXT PRIMARY KEY,
+        parentPage TEXT NOT NULL,
+        ratingId TEXT NOT NULL,
+        width REAL NOT NULL,
+        iconSize REAL NOT NULL,
+        topLeftCornerX REAL NOT NULL,
+        topLeftCornerY REAL NOT NULL,
+        currentValue INTEGER NOT NULL,
+        maxValue INTEGER NOT NULL,
+        zOrder REAL NOT NULL,
+        FOREIGN KEY (parentPage) REFERENCES page(id) ON DELETE CASCADE,
+        FOREIGN KEY (ratingId) REFERENCES rating(id) ON DELETE CASCADE
+      )
+    ''');
   }
 }

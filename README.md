@@ -143,23 +143,91 @@ lib/
 
 ### Template
 
-**Fait :**
-- Concept hérité du prototype Python : structure de page A4 avec zones de texte, zones photo, titres
-- Modèle `Template` avec `pages`, `add_page`, `add_text_zone`, `add_title`, `add_photo_zone`
+Un template est un modèle de fiche réutilisable, composé d'une ou plusieurs pages contenant des zones de texte, des zones photo et des jauges. Les templates ne vivent **pas** dans les dossiers : ils constituent une zone à part, accessible depuis `HomeScreen` (deux zones : Dossiers — affichée par défaut — et Templates).
 
-**À faire :**
-- Tout porter de Python vers Dart
-- Modèle `Template` dans `models/`
-- `TemplateService` (CRUD SQLite)
+#### Décisions de conception
+
+*Géométrie :*
+- Toutes les pages d'un template ont la **même taille réelle en pixels**, stockée sur le template (`canvasWidth`, `canvasHeight`).
+- A4 vierge → taille par défaut fixée par convention (A4 à 150 dpi ≈ 1240 × 1754 px).
+- Fond importé → la taille du canvas est celle, en pixels, de l'image importée. Pas de déformation ni de recadrage.
+- Toutes les positions et tailles de zones sont exprimées en **pourcentage de la page** (0.0 → 1.0), jamais en pixels. À l'affichage : `LayoutBuilder` donne la place disponible, la page s'y inscrit en respectant son ratio, et les pourcentages sont convertis en pixels par un facteur d'échelle unique.
+- Conséquence : l'export en JPG se fait à la taille native (rendu de la page à `canvasWidth` × `canvasHeight`), l'affichage écran à n'importe quelle taille, sans jamais toucher aux données.
+
+*Superposition :*
+- Ordre d'empilement fixe par type : **jauges** au-dessus, puis **zones de texte**, puis **zones photo**.
+- Chaque type possède son propre champ `order` interne (ordre au sein du type).
+- Limite acceptée en v1 : impossible de poser une photo par-dessus une zone de texte. Contournement : importer une image contenant déjà le texte.
+
+*Zones de texte :*
+- Le titre fixe n'est pas un type à part : c'est une **zone de texte verrouillée** (`isLocked = true`), dont le contenu est défini dans le template et non modifiable dans la fiche.
+- Une zone non verrouillée contient un **placeholder** : un Delta Quill complet (mis en forme : police, taille, alignement) qui n'est visible qu'en **mode édition** de la fiche, uniquement si la zone est vide, et qui disparaît dès la première frappe **en conservant son style**.
+- Même barre d'outils Quill que pour les notes.
+- Pas de limite de saisie : l'utilisateur peut écrire plus que la zone ne peut afficher. Le débordement est **découpé visuellement** (`ClipRect`), jamais tronqué en base — réduire la police fait réapparaître le texte.
+
+*Zones photo :*
+- Rectangles uniquement en v1. Les formes personnalisées (cercle, PNG masque) sont reportées.
+
+*Jauges :*
+- Le template définit : l'icône pleine, l'icône vide, la **valeur maximale**, une **valeur par défaut**, la taille d'icône et la largeur de la zone.
+- La hauteur de la zone est **déduite** du nombre d'icônes, de leur taille et de la largeur disponible (passage à la ligne automatique, type `Wrap`).
+- La fiche ne stocke qu'un entier (la valeur courante). Pas de demi-valeurs.
+- Édition dans la fiche : clic direct sur la Nᵉ icône → valeur = N. Recliquer sur la 1ʳᵉ icône quand la valeur vaut déjà 1 → retour à 0.
+- Aucune jauge n'est verrouillable.
+- Les icônes proviennent d'une **bibliothèque réutilisable** : un jeu fourni dans `assets/gauges/` + import d'images personnelles par l'utilisateur.
+
+*Duplication :*
+- Créer un template à partir d'un template existant (copie intégrale : pages, zones, fonds).
+- Ajouter une page à un template en dupliquant une page existante du même template.
+- La copie duplique aussi **physiquement** les fichiers image de fond (nouvel identifiant), pour que la suppression d'un template n'affecte jamais l'autre.
+
+#### Base de données
+
+- `templates` : `id TEXT PK, name TEXT NOT NULL, canvasWidth INTEGER, canvasHeight INTEGER, iconPath TEXT`
+- `template_pages` : `id TEXT PK, templateId TEXT, pageOrder INTEGER, backgroundPath TEXT` — FK CASCADE
+- `template_text_zones` : `id TEXT PK, pageId TEXT, x REAL, y REAL, width REAL, height REAL, isLocked INTEGER, content TEXT (Delta JSON), zoneOrder INTEGER` — FK CASCADE
+- `template_photo_zones` : `id TEXT PK, pageId TEXT, x REAL, y REAL, width REAL, height REAL, shape TEXT, zoneOrder INTEGER` — FK CASCADE
+- `template_gauge_zones` : `id TEXT PK, pageId TEXT, x REAL, y REAL, width REAL, iconSize REAL, fullIconId TEXT, emptyIconId TEXT, maxValue INTEGER, defaultValue INTEGER, zoneOrder INTEGER` — FK CASCADE
+- `gauge_icons` : `id TEXT PK, name TEXT, path TEXT, isBuiltIn INTEGER`
+- IDs format : `template_00001`, `page_00001`, `zone_00001`, `gauge_00001`
+
+#### Stockage physique
+
+- Fonds de page : `<AppDocumentsDirectory>/backgrounds/<pageId>.jpg` — copie de l'original via `File.copy()`, même principe que les bannières de notes.
+- Icônes de jauge importées : `<AppDocumentsDirectory>/gauge_icons/<iconId>.png`.
+
+#### Rendu
+
+- `Stack` + `Positioned` (et non `CustomPainter`) : chaque zone est un vrai widget, ce qui rend triviaux le `GestureDetector` (drag & drop), le menu contextuel et l'insertion d'un `QuillEditor` dans une zone côté fiche.
+- Enveloppé dans un `LayoutBuilder` pour convertir les pourcentages en pixels.
+- Export JPG : `RepaintBoundary` + `toImage(pixelRatio: …)` puis encodage via le package `image`.
+
+#### État d'avancement
+
+**Fait :**
+- Concept et cahier des charges hérités du prototype Python (structure page / zones de texte / zones photo / titres)
+
+**À faire — phase 1 (terrain connu) :**
+- Modèles `Template`, `TemplatePage`, `TextZone`, `PhotoZone`, `GaugeZone`, `GaugeIcon` dans `models/`
+- Tables SQLite et migration du `DatabaseHelper`
+- `TemplateService` (CRUD + duplication de template et de page)
 - `TemplateProvider`
-- `TemplateScreen` (liste des templates)
-- `ModifyTemplate` (éditeur de template avec canvas)
-- Sélection d'image de fond ou A4 vierge
-- Ajout/déplacement de zones de texte par drag & drop
-- Ajout de titres
-- Ajout de zones photo avec formes
-- Multi-pages avec réordonnancement
-- Stockage des images de fond dans `assets/backgrounds/`
+- Zone Templates sur `HomeScreen` + `TemplateScreen` (liste plate, menu contextuel renommer/dupliquer/supprimer)
+- Dialog de création : nom + choix A4 vierge / image de fond / duplication d'un template existant
+
+**À faire — phase 2 (l'éditeur) :**
+- `ModifyTemplateScreen` : rendu d'une page (fond + zones) en `Stack` / `Positioned` / `LayoutBuilder`
+- Création d'une zone de texte par sélection à la souris
+- Déplacement et redimensionnement par drag & drop
+- Paramètres d'une zone (clic droit) : verrouillage, contenu du placeholder, style Quill
+- Gestionnaire de pages : navigation, ajout (vierge ou dupliquée), réordonnancement, suppression
+
+**À faire — phase 3 (images et jauges) :**
+- Zones photo rectangulaires
+- Bibliothèque d'icônes de jauge (jeu fourni + import)
+- Zones jauge dans l'éditeur
+- Export d'une page en JPG
+- Plus tard : formes de zones photo autres que le rectangle, zoom/recadrage de l'image insérée dans une zone
 
 
 ### Fiche
