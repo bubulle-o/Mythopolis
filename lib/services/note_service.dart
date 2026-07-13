@@ -27,14 +27,14 @@ class NoteService {
 
   /// Crée une note dans un dossier. Lève une exception si une note
   /// du même nom existe déjà dans ce dossier.
-  Future<void> createNote(String folderName, String parentFolder, String? iconPath) async {
+  Future<void> createNote(String noteName, String parentFolder, String? iconPath) async {
     final db = await DatabaseHelper().database;
     List<Map<String, Object?>> nameOk =
         await db.rawQuery('select name from notes where parentFolder = ?', [parentFolder]);
 
-    if (!nameOk.any((map) => map['name'] == folderName)) {
+    if (!nameOk.any((map) => map['name'] == noteName)) {
       String id = await _generateId();
-      Note note = Note(id, folderName, parentFolder, iconPath, null, null, null, BannerAlignment.center);
+      Note note = Note(id, noteName, parentFolder, iconPath, null, null, null, BannerAlignment.center);
       await db.insert('notes', note.toMap());
     } else {
       throw Exception('Il existe déjà une note du même nom à cet emplacement');
@@ -138,9 +138,6 @@ class NoteService {
         whereArgs: [id],
       );
   }
-
-
-
 
   
   Future<void> changeBannerAlignment(String id, BannerAlignment alignment) async{

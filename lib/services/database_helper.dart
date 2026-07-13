@@ -74,7 +74,7 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
-      CREATE TABLE template(
+      CREATE TABLE templates(
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         canvasHeight INTEGER NOT NULL,
@@ -83,7 +83,7 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
-      CREATE TABLE rating(
+      CREATE TABLE ratings(
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         emptyPath TEXT NOT NULL,
@@ -92,20 +92,20 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
-      CREATE TABLE sheet(
+      CREATE TABLE sheets(
         id TEXT PRIMARY KEY
       )
     ''');
 
     await db.execute('''
-      CREATE TABLE page(
+      CREATE TABLE pages(
         id TEXT PRIMARY KEY,
         parentTemplate TEXT,
         parentSheet TEXT,
         backgroundPath TEXT,
         zOrder REAL NOT NULL,
-        FOREIGN KEY (parentTemplate) REFERENCES template(id) ON DELETE CASCADE,
-        FOREIGN KEY (parentSheet) REFERENCES sheet(id) ON DELETE CASCADE,
+        FOREIGN KEY (parentTemplate) REFERENCES templates(id) ON DELETE CASCADE,
+        FOREIGN KEY (parentSheet) REFERENCES sheets(id) ON DELETE CASCADE,
         CHECK (
           (parentTemplate IS NOT NULL AND parentSheet IS NULL)
           OR
@@ -115,7 +115,7 @@ class DatabaseHelper {
     ''');
 
     await db.execute('''
-      CREATE TABLE textZone(
+      CREATE TABLE textZones(
         id TEXT PRIMARY KEY,
         parentPage TEXT NOT NULL,
         content TEXT,
@@ -125,12 +125,12 @@ class DatabaseHelper {
         topLeftCornerY REAL NOT NULL,
         isLocked INTEGER NOT NULL,
         zOrder REAL NOT NULL,
-        FOREIGN KEY (parentPage) REFERENCES page(id) ON DELETE CASCADE
+        FOREIGN KEY (parentPage) REFERENCES pages(id) ON DELETE CASCADE
       )
     ''');
 
     await db.execute('''
-      CREATE TABLE photoZone(
+      CREATE TABLE photoZones(
         id TEXT PRIMARY KEY,
         parentPage TEXT NOT NULL,
         shapePath TEXT,
@@ -140,12 +140,12 @@ class DatabaseHelper {
         topLeftCornerX REAL NOT NULL,
         topLeftCornerY REAL NOT NULL,
         zOrder REAL NOT NULL,
-        FOREIGN KEY (parentPage) REFERENCES page(id) ON DELETE CASCADE
+        FOREIGN KEY (parentPage) REFERENCES pages(id) ON DELETE CASCADE
       )
     ''');
 
     await db.execute('''
-      CREATE TABLE ratingZone(
+      CREATE TABLE ratingZones(
         id TEXT PRIMARY KEY,
         parentPage TEXT NOT NULL,
         ratingId TEXT NOT NULL,
@@ -156,8 +156,8 @@ class DatabaseHelper {
         currentValue INTEGER NOT NULL,
         maxValue INTEGER NOT NULL,
         zOrder REAL NOT NULL,
-        FOREIGN KEY (parentPage) REFERENCES page(id) ON DELETE CASCADE,
-        FOREIGN KEY (ratingId) REFERENCES rating(id) ON DELETE CASCADE
+        FOREIGN KEY (parentPage) REFERENCES pages(id) ON DELETE CASCADE,
+        FOREIGN KEY (ratingId) REFERENCES ratings(id) ON DELETE CASCADE
       )
     ''');
   }
