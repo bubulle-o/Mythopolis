@@ -41,7 +41,7 @@ class TemplateService {
     );
     await db.insert('templates', template.toMap());
 
-    await PageService().createPage(id, null, backgroundPath,canvasWidth, canvasHeight, 1);
+    await PageService().addPage(id, null, backgroundPath,canvasWidth, canvasHeight, 1);
 
     return id;
   }

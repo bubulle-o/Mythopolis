@@ -22,7 +22,7 @@ class PageService {
   /// Crée une page et retourne son ID.
   /// Si [sourceBackgroundPath] est fourni, l'image est redimensionnée à
   /// [targetWidth] × [targetHeight] et copiée dans le stockage de l'app.
-  Future<String> createPage(
+  Future<String> addPage(
     String? parentTemplate,
     String? parentSheet,
     String? sourceBackgroundPath,

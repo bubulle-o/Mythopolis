@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mythopolis/providers/note_provider.dart';
+import 'package:mythopolis/providers/page_provider.dart';
 import 'package:mythopolis/providers/settings_provider.dart';
 import 'package:mythopolis/providers/template_provider.dart';
 import 'package:provider/provider.dart';
@@ -18,7 +19,8 @@ void main() {
         ChangeNotifierProvider(create: (_) => FolderProvider()),
         ChangeNotifierProvider(create: (_) => NoteProvider()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
-        ChangeNotifierProvider(create: (_) => TemplateProvider())
+        ChangeNotifierProvider(create: (_) => TemplateProvider()),
+        ChangeNotifierProvider(create: (_) => PageProvider())
       ],
       child: const MyApp(),
     ),

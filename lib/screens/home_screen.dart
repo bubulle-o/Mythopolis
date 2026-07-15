@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:mythopolis/providers/page_provider.dart';
 import 'package:mythopolis/screens/folder_screen.dart';
 import 'package:mythopolis/screens/folder_search_delegate.dart';
+import 'package:mythopolis/screens/modify_template_screen.dart';
 import 'package:mythopolis/screens/widgets/create_template_dialog.dart';
 import 'package:mythopolis/utils/enum.dart';
 import 'package:provider/provider.dart';
@@ -135,9 +137,10 @@ class _HomeScreenState extends State<HomeScreen>
         leading: Icon(Icons.description),
         title: Text(template.name),
         subtitle: Text('${template.canvasWidth} × ${template.canvasHeight} px'),
-        onTap: () {
-          // TODO : ouvrir ModifyTemplateScreen
-        },
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => ModifyTemplateScreen(template: template)),
+        ).then((_) => context.read<PageProvider>().loadPagesFromTemplate(template.id)),
       ),
     );
   }
