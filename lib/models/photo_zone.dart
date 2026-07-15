@@ -7,6 +7,7 @@ class PhotoZone {
   double width;
   double topLeftCornerX;
   double topLeftCornerY;
+  bool belowBackground;
   double zOrder;
 
   PhotoZone({
@@ -18,6 +19,7 @@ class PhotoZone {
     required this.width,
     required this.topLeftCornerX,
     required this.topLeftCornerY,
+    this.belowBackground = false,
     required this.zOrder,
   });
 
@@ -31,6 +33,7 @@ class PhotoZone {
       "width": width,
       "topLeftCornerX": topLeftCornerX,
       "topLeftCornerY": topLeftCornerY,
+      "belowBackground": belowBackground ? 1 : 0,   // bool -> INTEGER
       "zOrder": zOrder,
     };
   }
@@ -45,6 +48,7 @@ class PhotoZone {
       width: data["width"],
       topLeftCornerX: data["topLeftCornerX"],
       topLeftCornerY: data["topLeftCornerY"],
+      belowBackground: data["belowBackground"] == 1,   // INTEGER -> bool
       zOrder: data["zOrder"],
     );
   }

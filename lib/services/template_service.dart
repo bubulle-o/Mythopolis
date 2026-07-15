@@ -22,8 +22,8 @@ class TemplateService {
   /// Lève une exception si un template du même nom existe déjà.
   Future<String> createTemplate(
     String name,
-    int canvasHeight,
     int canvasWidth,
+    int canvasHeight,
     String? backgroundPath,
   ) async {
     final db = await DatabaseHelper().database;
@@ -41,7 +41,7 @@ class TemplateService {
     );
     await db.insert('templates', template.toMap());
 
-    await PageService().createPage(id, null, backgroundPath, 1);
+    await PageService().createPage(id, null, backgroundPath,canvasWidth, canvasHeight, 1);
 
     return id;
   }

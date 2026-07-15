@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mythopolis/providers/note_provider.dart';
 import 'package:mythopolis/providers/settings_provider.dart';
+import 'package:mythopolis/providers/template_provider.dart';
 import 'package:provider/provider.dart';
 import 'providers/folder_provider.dart';
 import 'screens/home_screen.dart';
@@ -16,7 +17,8 @@ void main() {
       providers: [
         ChangeNotifierProvider(create: (_) => FolderProvider()),
         ChangeNotifierProvider(create: (_) => NoteProvider()),
-        ChangeNotifierProvider(create: (_) => SettingsProvider())
+        ChangeNotifierProvider(create: (_) => SettingsProvider()),
+        ChangeNotifierProvider(create: (_) => TemplateProvider())
       ],
       child: const MyApp(),
     ),

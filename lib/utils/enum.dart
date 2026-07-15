@@ -35,3 +35,23 @@ extension BannerAlignmentExtension on BannerAlignment {
     }
   }
 }
+
+// Tailles de canvas prédéfinies, exprimées en portrait.
+// L'orientation paysage s'obtient en permutant width et height.
+enum CanvasFormat {
+  a4(1240, 1754, 'A4'),
+  a5(874, 1240, 'A5'),
+  cardTCG(750, 1050, 'Carte TCG'),
+  card(651, 995, 'Carte classique'),
+  tarot(825, 1425, 'Carte Tarot'),
+  tq_2k(1536, 2048, '3:4'),
+  ns_2K( 1080, 1920, '9:16'),
+  square(1240, 1240, 'Carré'),
+  square_2k(2048, 2048, 'Carré');
+
+
+  const CanvasFormat(this.width, this.height, this.label);
+  final int width;
+  final int height;
+  final String label;
+}

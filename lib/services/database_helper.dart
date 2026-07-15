@@ -139,6 +139,7 @@ class DatabaseHelper {
         width REAL NOT NULL,
         topLeftCornerX REAL NOT NULL,
         topLeftCornerY REAL NOT NULL,
+        belowBackground INTEGER NOT NULL DEFAULT 0,
         zOrder REAL NOT NULL,
         FOREIGN KEY (parentPage) REFERENCES pages(id) ON DELETE CASCADE
       )
