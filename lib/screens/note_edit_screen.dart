@@ -1,18 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
-import 'package:mythopolis/models/folder.dart';
 import 'package:mythopolis/models/note.dart';
-import 'package:mythopolis/models/sheet.dart';
-import 'package:mythopolis/providers/folder_provider.dart';
 import 'package:mythopolis/providers/note_provider.dart';
 import 'package:mythopolis/screens/note_read_screen.dart';
 import 'package:mythopolis/services/note_service.dart';
 import 'package:mythopolis/utils/enum.dart';
+import 'package:mythopolis/screens/widgets/quill_toolbar_editor.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
-import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:image_picker/image_picker.dart';
-import 'dart:io'; 
+import 'dart:io';
 
 
 //////////////////////////////////////////////////////
@@ -45,7 +42,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   void initState() {
     super.initState();
 
-    _currentNote= widget.note;
+    _currentNote = widget.note;
 
     // Charger le contenu existant ou créer un document vide
     final content = widget.note.content;
@@ -97,7 +94,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
               onPressed: () => _goToReadScreen(context),
             ),
             PopupMenuButton<String>(
-              icon: Icon(Icons.image),  // ou tout autre widget
+              icon: const Icon(Icons.image),
               onSelected: (value) {
                 // value = la string du PopupMenuItem sélectionné
                 if (value == 'add') _pickBanner();
@@ -105,20 +102,11 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                 if (value == 'crop') _changeBannerAlignment();
               },
               itemBuilder: (context) => [
-                PopupMenuItem(
-                  value: 'add',
-                  child: Text('Ajouter un bandeau'),
-                ),
-                PopupMenuItem(
-                  value: 'remove',
-                  child: Text('Supprimer'),
-                ),
-                PopupMenuItem(
-                  value: 'crop',
-                  child: Text('Recadrer'),
-                ),
+                const PopupMenuItem(value: 'add', child: Text('Ajouter un bandeau')),
+                const PopupMenuItem(value: 'remove', child: Text('Supprimer')),
+                const PopupMenuItem(value: 'crop', child: Text('Recadrer')),
               ],
-            )
+            ),
           ],
         ),
         body: _buildEditor(),
@@ -131,193 +119,39 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   //                    ÉDITEUR                       //
   //////////////////////////////////////////////////////
 
-  /// Éditeur Quill avec barre d'outils et marges latérales
+  /// Affiche la bannière de la note (si elle existe) au-dessus du
+  /// widget Quill réutilisable. Les deux sont indépendants — la
+  /// bannière n'est pas connue de QuillToolbarEditor.
   Widget _buildEditor() {
     return Column(
       children: [
-        // Barre d'outils de mise en forme — prend toute la largeur
-        QuillSimpleToolbar(
-          controller: _quillController,
-          config: QuillSimpleToolbarConfig(
-            embedButtons: FlutterQuillEmbeds.toolbarButtons(),
-            // Bouton custom pour insérer un lien interne (note/dossier)
-            customButtons: [
-              QuillToolbarCustomButtonOptions(
-                icon: const Icon(Icons.link_rounded),
-                tooltip: 'Lien interne',
-                onPressed: () => _showLinkPicker(context),
-              ),
-            ],
-            buttonOptions: QuillSimpleToolbarButtonOptions(
-              fontFamily: QuillToolbarFontFamilyButtonOptions(
-                items: const {
-                  'Cardo': 'Cardo',
-                  'EB Garamond': 'EBGaramond',
-                  'Cinzel': 'Cinzel',
-                  'MedievalSharp': 'MedievalSharp',
-                  'UnifrakturMaguntia': 'UnifrakturMaguntia',
-                  'Pirata One': 'PirataOne',
-                  'Orbitron': 'Orbitron',
-                  'Audiowide': 'Audiowide',
-                  'Lexend': 'Lexend',
-                },
-              ),
-            ),
-          ),
-        ),
-        
-        if (_currentNote.bannerPath != null)
-            Container(
-              height: 135,
-              width: double.infinity,
-              child: Image.file(File(_currentNote.bannerPath!), key: ValueKey(DateTime.now().millisecondsSinceEpoch), fit: BoxFit.cover, alignment: _currentNote.bannerAlignment.toFlutterAlignment()),
-              
-            ), 
-          // Affichage du contenu en lecture seule avec marges
-        // Zone d'édition avec marges latérales
         Expanded(
-          child: Container(
-            // Marges latérales pour aérer l'écriture
-            padding: const EdgeInsets.symmetric(
-              horizontal: 64,  // marge gauche/droite
-              vertical: 24,    // marge haut/bas
-            ),
-            child: QuillEditor.basic(
-              controller: _quillController,
-              config: QuillEditorConfig(
-                embedBuilders: FlutterQuillEmbeds.editorBuilders(),
-              ),
-            ),
-          ),
+          child: QuillToolbarEditor(controller: _quillController),
         ),
+        if (_currentNote.bannerPath != null)
+          Container(
+            height: 135,
+            width: double.infinity,
+            child: Image.file(
+              File(_currentNote.bannerPath!),
+              key: ValueKey(DateTime.now().millisecondsSinceEpoch),
+              fit: BoxFit.cover,
+              alignment: _currentNote.bannerAlignment.toFlutterAlignment(),
+            ),
+          ) 
       ],
     );
   }
 
-  ///////////////////////////////////////////////////
-  //                    LiENS                      //
-  ///////////////////////////////////////////////////
-  
-  void _showLinkPicker(BuildContext dialogContext) async {
-    List<Folder> allFolders = await dialogContext.read<FolderProvider>().getAllFolders();
-    List<Note> allNotes  = await dialogContext.read<NoteProvider>().getAllNotes();
-    List<Map<String, dynamic>> tree = _buildWholeTree(allFolders, allNotes, null, 0);
-    final TextEditingController controller = TextEditingController();
-    String selectedId= '';
-
-    showDialog(
-      context: dialogContext,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (dialogContext, setState) => AlertDialog(
-          title: Text('Lien vers...'),
-          content: SizedBox(
-            width: 300,
-            height: 400,
-            child: Column(
-              children: [
-                TextField(
-                  controller: controller,
-                  decoration: InputDecoration(hintText: 'Nom affiché'),
-                ),
-                Expanded(
-                  child: ListView(
-                    children: [
-                      ...tree.map((item) {
-                        int depth = item['depth'];
-                        
-                        if(item['type'] == 'folder'){
-                          Folder f = item['item'];
-                          return ListTile(
-                            contentPadding: EdgeInsets.only(left: 16.0 + depth * 20),
-                            leading: Icon(Icons.folder),
-                            title: Text(f.name),
-                            selected: selectedId == f.id,
-                            onTap: () => setState(() => selectedId = f.id),
-                          );
-                        }
-
-                        else {
-                          Note n = item['item'];
-                          return ListTile(
-                            contentPadding: EdgeInsets.only(left: 16.0 + depth * 20),
-                            leading: Icon(Icons.note),
-                            title: Text(n.name),
-                            selected: selectedId == n.id,
-                            onTap: () => setState(() => selectedId = n.id),
-                          );
-                        }
-                                          
-                      }),
-                    ]
-                  )
-                )
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
-              child: Text('Annuler'),
-            ),
-            TextButton(
-              onPressed: () async {
-                try {
-                  _insertLink(controller.text, selectedId);
-                  Navigator.pop(dialogContext);
-                } catch (e) {
-                  ScaffoldMessenger.of(dialogContext).showSnackBar(
-                    SnackBar(content: Text(e.toString())),
-                  );
-                }
-              },
-              child: Text('Insérer'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// Construit l'arborescence complète sans exclusion
-  List<Map<String, dynamic>> _buildWholeTree( List<Folder> allFolders, List<Note> allNotes, String? parentId, int depth) {
-    List<Map<String, dynamic>> result = [];
-    for (Note note in allNotes){
-      if (note.parentFolder == parentId) {
-        result.add({'item': note, 'depth': depth, 'type' : 'note'});
-      }
-    }
-
-    for (Folder folder in allFolders) {
-      if (folder.parentFolder == parentId) {
-        result.add({'item': folder, 'depth': depth, 'type' : 'folder'});
-        result.addAll(_buildWholeTree(allFolders, allNotes,  folder.id, depth + 1));
-      }
-    }
-    return result;
-  }
-
-  void _insertLink(String nom, String id) {
-    _quillController.replaceText(
-      _quillController.selection.baseOffset,
-      _quillController.selection.extentOffset - _quillController.selection.baseOffset,
-      nom,
-      TextSelection.collapsed(offset: _quillController.selection.baseOffset + nom.length),
-    );
-    _quillController.formatText(
-      _quillController.selection.baseOffset - nom.length,
-      nom.length,
-      LinkAttribute('https://$id'),
-    );
-  }
 
   ///////////////////////////////////////////////////
   //                 Bannière                      //
   ///////////////////////////////////////////////////
 
-  Future<void> _pickBanner() async{
+  Future<void> _pickBanner() async {
     final picker = ImagePicker();
     XFile? image = await picker.pickImage(source: ImageSource.gallery);
-    await context.read<NoteProvider>().pickBanner(_currentNote.id,image);
+    await context.read<NoteProvider>().pickBanner(_currentNote.id, image);
     // Recharger et rafraîchir
     final freshNote = await NoteService().loadNote(_currentNote.id);
     setState(() {
@@ -325,10 +159,9 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     });
     imageCache.clear();
     imageCache.clearLiveImages();
-  } 
+  }
 
-
-  Future<void> _removeBanner() async{
+  Future<void> _removeBanner() async {
     await context.read<NoteProvider>().removeBanner(_currentNote.id);
     // Recharger et rafraîchir
     final freshNote = await NoteService().loadNote(_currentNote.id);
@@ -337,25 +170,23 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
     });
     imageCache.clear();
     imageCache.clearLiveImages();
-    
   }
 
-
-  Future<void> _changeBannerAlignment() async{
+  Future<void> _changeBannerAlignment() async {
     _selectedHorizontal = divideAlignmentH(_currentNote.bannerAlignment);
     _selectedVertical = divideAlignmentV(_currentNote.bannerAlignment);
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, dialogSetState) => AlertDialog(
-          title: Text("Changer l'alignement de la banière"),
+          title: const Text("Changer l'alignement de la banière"),
           content: SingleChildScrollView(
             child: Column(
               children: [
                 RadioGroup<int>(
                   groupValue: _selectedHorizontal,
                   onChanged: (value) => dialogSetState(() => _selectedHorizontal = value!),
-                  child: Column(
+                  child: const Column(
                     children: [
                       RadioListTile<int>(
                         title: Text('Gauche'),
@@ -373,12 +204,12 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                   ),
                 ),
 
-                Divider(),
+                const Divider(),
 
                 RadioGroup<int>(
                   groupValue: _selectedVertical,
-                  onChanged: (value) => dialogSetState (() => _selectedVertical = value!),
-                  child: Column(
+                  onChanged: (value) => dialogSetState(() => _selectedVertical = value!),
+                  child: const Column(
                     children: [
                       RadioListTile<int>(
                         title: Text('Haut'),
@@ -394,19 +225,19 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                       ),
                     ],
                   ),
-                ),// bas
+                ), // bas
               ],
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext),
-              child: Text('Annuler'),
+              child: const Text('Annuler'),
             ),
             TextButton(
               onPressed: () async {
                 try {
-                  BannerAlignment alignment = combineAlignment(_selectedHorizontal,_selectedVertical);
+                  BannerAlignment alignment = combineAlignment(_selectedHorizontal, _selectedVertical);
                   await context.read<NoteProvider>().changeBannerAlignment(_currentNote.id, alignment);
                   final freshNote = await NoteService().loadNote(_currentNote.id);
                   setState(() {
@@ -420,104 +251,79 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
                     SnackBar(content: Text(e.toString())),
                   );
                 }
-                
               },
-              child: Text('Valider'),
+              child: const Text('Valider'),
             ),
           ],
         ),
-      )
+      ),
     );
   }
 
   // switch sur les 9 combinaisons possibles
   BannerAlignment combineAlignment(int horizontal, int vertical) {
-    if(horizontal<0 || horizontal>2 ||vertical<0 || vertical>2){
+    if (horizontal < 0 || horizontal > 2 || vertical < 0 || vertical > 2) {
       return _currentNote.bannerAlignment;
     }
 
-    if(vertical == 0){
-      if(horizontal == 0){
+    if (vertical == 0) {
+      if (horizontal == 0) {
         return BannerAlignment.topLeft;
-      }
-
-      else if(horizontal == 1){
+      } else if (horizontal == 1) {
         return BannerAlignment.topCenter;
-      }
-
-      else{
+      } else {
         return BannerAlignment.topRight;
       }
-    
     }
 
-    if(vertical == 1){
-      if(horizontal == 0){
+    if (vertical == 1) {
+      if (horizontal == 0) {
         return BannerAlignment.centerLeft;
-      }
-
-      else if(horizontal == 1){
+      } else if (horizontal == 1) {
         return BannerAlignment.center;
-      }
-
-      else{
+      } else {
         return BannerAlignment.centerRight;
       }
-    
     }
 
     else {
-      if(horizontal == 0){
+      if (horizontal == 0) {
         return BannerAlignment.bottomLeft;
-      }
-
-      else if(horizontal == 1){
+      } else if (horizontal == 1) {
         return BannerAlignment.bottomCenter;
-      }
-
-      else{
+      } else {
         return BannerAlignment.bottomRight;
       }
-    
     }
-    
-  } 
+  }
 
-  int divideAlignmentH (BannerAlignment alignement) {
-    
-    if(alignement== BannerAlignment.topLeft || alignement== BannerAlignment.topCenter || alignement== BannerAlignment.topRight){
+  int divideAlignmentH(BannerAlignment alignement) {
+    if (alignement == BannerAlignment.topLeft ||
+        alignement == BannerAlignment.centerLeft ||
+        alignement == BannerAlignment.bottomLeft) {
       return 0;
-    
-    }
-
-    else if(alignement== BannerAlignment.centerLeft || alignement== BannerAlignment.center || alignement== BannerAlignment.centerRight){
+    } else if (alignement == BannerAlignment.topCenter ||
+        alignement == BannerAlignment.center ||
+        alignement == BannerAlignment.bottomCenter) {
       return 1;
-    
-    }
-
-    else{
+    } else {
       return 2;
     }
-    
-  } 
+  }
 
-  int divideAlignmentV (BannerAlignment alignement) {
-    
-    if(alignement== BannerAlignment.topLeft || alignement== BannerAlignment.centerLeft || alignement== BannerAlignment.bottomLeft){
+  int divideAlignmentV(BannerAlignment alignement) {
+    if (alignement == BannerAlignment.topLeft ||
+        alignement == BannerAlignment.topCenter ||
+        alignement == BannerAlignment.topRight) {
       return 0;
-    
-    }
-
-    else if(alignement== BannerAlignment.topCenter || alignement== BannerAlignment.center || alignement== BannerAlignment.bottomCenter){
+    } else if (alignement == BannerAlignment.centerLeft ||
+        alignement == BannerAlignment.center ||
+        alignement == BannerAlignment.centerRight) {
       return 1;
-    
-    }
-
-    else{
+    } else {
       return 2;
     }
-    
-  } 
+  }
 
   //////////////////////////////////////////////////////
   //                  SAUVEGARDE                      //
@@ -527,13 +333,13 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   Future<void> _saveNote() async {
     await context.read<NoteProvider>().changeNote(
       _currentNote.id,
-      null,  // on ne change pas le nom
-      null,  // on ne change pas le dossier parent
+      null, // on ne change pas le nom
+      null, // on ne change pas le dossier parent
       jsonEncode(_quillController.document.toDelta().toJson()),
     );
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
+      const SnackBar(
         content: Text('Note sauvegardée'),
         duration: Duration(seconds: 2),
       ),
@@ -577,7 +383,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   //////////////////////////////////////////////////////
 
   /// Navigation vers l'écran de lecture
-  Future<void> _goToReadScreen(BuildContext context) async{
+  Future<void> _goToReadScreen(BuildContext context) async {
     await _saveNote();
     Note freshNote = await NoteService().loadNote(_currentNote.id);
     Navigator.pushReplacement(
