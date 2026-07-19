@@ -1,16 +1,13 @@
 import 'dart:io';
 import 'dart:convert';
 import 'package:flutter_quill/flutter_quill.dart';
-import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:mythopolis/models/page_model.dart';
 import 'package:mythopolis/models/template.dart';
 import 'package:mythopolis/providers/page_provider.dart';
-import 'package:mythopolis/providers/template_provider.dart';
-import 'package:mythopolis/screens/note_edit_screen.dart';
 import 'package:mythopolis/screens/widgets/quill_toolbar_editor.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_speed_dial/flutter_speed_dial.dart';
+
 
 
 //////////////////////////////////////////////////////
@@ -62,7 +59,6 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
   @override
   Widget build(BuildContext context) {
     final pageProvider = context.watch<PageProvider>();
-    final String name = widget.template.name;
     List<PageModel> allpages = pageProvider.getPages();
 
     if (allpages.isEmpty) {
@@ -71,7 +67,7 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
     final String? chemin = allpages[currentPage].backgroundPath;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Nom de la template')),
+      appBar: AppBar(title: Text(widget.template.name)),
       body: Column(
         children: [ 
           _buildToolbar(),
@@ -167,12 +163,19 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
             IconButton(
               icon: Icon(Icons.layers_rounded),
               tooltip: 'Gérer les pages',
-              onPressed: () => setState(() => _showPagePanel = true)
+              onPressed: () => setState(() => _showPagePanel = !_showPagePanel)
             )
           ],
         ),
       ),
     );
+  }
+
+    @override
+  void dispose() {
+    // OBLIGATOIRE : libérer la mémoire du contrôleur quand l'écran est détruit
+    _quillController.dispose();
+    super.dispose();
   }
 
 }
