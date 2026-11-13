@@ -2,6 +2,7 @@ import 'package:mythopolis/models/note.dart';
 import 'package:mythopolis/providers/note_provider.dart';
 import 'package:mythopolis/screens/folder_search_delegate.dart';
 import 'package:mythopolis/screens/note_read_screen.dart';
+import 'package:mythopolis/utils/enum.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/material.dart';
 import 'package:mythopolis/models/folder.dart';
@@ -69,7 +70,11 @@ class _FolderScreenState extends State<FolderScreen>
             icon: Icon(Icons.search),
             onPressed: () => showSearch(
               context: context,
-              delegate: FolderSearchDelegate(widget.folder),
+              // Recherche limitée au type de l'onglet actif
+              delegate: FolderSearchDelegate(
+                widget.folder,
+                scope: SearchScope.values[_tabController.index],
+              ),
             ),
           ),
         ],

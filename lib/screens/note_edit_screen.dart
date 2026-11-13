@@ -3,9 +3,10 @@ import 'package:flutter_quill/flutter_quill.dart';
 import 'package:mythopolis/models/note.dart';
 import 'package:mythopolis/providers/note_provider.dart';
 import 'package:mythopolis/screens/note_read_screen.dart';
+import 'package:mythopolis/screens/widgets/quill_toolbar_editor.dart';
 import 'package:mythopolis/services/note_service.dart';
 import 'package:mythopolis/utils/enum.dart';
-import 'package:mythopolis/screens/widgets/quill_toolbar_editor.dart';
+import 'package:flutter_quill_extensions/flutter_quill_extensions.dart';
 import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
@@ -119,15 +120,15 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   //                    ÉDITEUR                       //
   //////////////////////////////////////////////////////
 
-  /// Affiche la bannière de la note (si elle existe) au-dessus du
-  /// widget Quill réutilisable. Les deux sont indépendants — la
-  /// bannière n'est pas connue de QuillToolbarEditor.
+  /// Assemble : barre d'outils réutilisable, puis bannière de la note
+  /// (si elle existe), puis la zone d'édition du texte.
   Widget _buildEditor() {
     return Column(
       children: [
-        Expanded(
-          child: QuillToolbarEditor(controller: _quillController),
-        ),
+        // Barre d'outils réutilisable — ne connaît que le controller
+        QuillToolbar(controller: _quillController),
+
+        // Bannière de la note
         if (_currentNote.bannerPath != null)
           Container(
             height: 135,
@@ -138,7 +139,23 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
               fit: BoxFit.cover,
               alignment: _currentNote.bannerAlignment.toFlutterAlignment(),
             ),
-          ) 
+          ),
+
+        // Zone d'édition avec marges latérales
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 64, // marge gauche/droite
+              vertical: 24,   // marge haut/bas
+            ),
+            child: QuillEditor.basic(
+              controller: _quillController,
+              config: QuillEditorConfig(
+                embedBuilders: FlutterQuillEmbeds.editorBuilders(),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

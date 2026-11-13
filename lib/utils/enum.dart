@@ -55,3 +55,12 @@ enum CanvasFormat {
   final int height;
   final String label;
 }
+
+
+// Périmètre de la recherche, selon l'onglet actif du dossier
+enum SearchScope {
+  all,      // dossiers + notes (+ fiches à venir)
+  folders,  // dossiers uniquement
+  notes,    // notes uniquement
+  sheets,   // fiches uniquement
+}

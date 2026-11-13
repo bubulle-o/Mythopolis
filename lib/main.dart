@@ -3,6 +3,7 @@ import 'package:mythopolis/providers/note_provider.dart';
 import 'package:mythopolis/providers/page_provider.dart';
 import 'package:mythopolis/providers/settings_provider.dart';
 import 'package:mythopolis/providers/template_provider.dart';
+import 'package:mythopolis/providers/text_zone_provider.dart';
 import 'package:provider/provider.dart';
 import 'providers/folder_provider.dart';
 import 'screens/home_screen.dart';
@@ -20,7 +21,9 @@ void main() {
         ChangeNotifierProvider(create: (_) => NoteProvider()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ChangeNotifierProvider(create: (_) => TemplateProvider()),
-        ChangeNotifierProvider(create: (_) => PageProvider())
+        ChangeNotifierProvider(create: (_) => PageProvider()),
+        ChangeNotifierProvider(create: (_) => TextZoneProvider())
+         
       ],
       child: const MyApp(),
     ),
