@@ -1,9 +1,17 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mythopolis/models/photo_zone.dart';
+import 'package:mythopolis/models/rating_zone.dart';
+import 'package:mythopolis/providers/rating_zone_provider.dart';
+import 'package:mythopolis/screens/widgets/rating_options_dialog.dart';
+import 'package:mythopolis/screens/widgets/rating_picker_dialog.dart';
+import 'package:mythopolis/screens/widgets/rating_zone_widget.dart';
+import 'package:mythopolis/utils/rating_geometry.dart';
+import 'package:mythopolis/utils/rating_images.dart';
 import 'package:mythopolis/models/text_zone.dart';
 import 'package:mythopolis/providers/photo_zone_provider.dart';
 import 'package:mythopolis/screens/widgets/photo_zone_widget.dart';
@@ -118,27 +126,8 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
           Expanded(
             child: Stack(
               children: [
-                LayoutBuilder(
-                  builder: (BuildContext context, BoxConstraints constraints) {
-                    // Échelle d'affichage du canvas (FittedBox contain) →
-                    // combien de pixels du canvas pour 1 pixel d'écran.
-                    final double fitScale = math.min(
-                      constraints.maxWidth / widget.template.canvasWidth,
-                      constraints.maxHeight / widget.template.canvasHeight,
-                    );
-                    return Center(
-                      child: FittedBox(
-                        fit: BoxFit.contain,
-                        child: SizedBox(
-                          key: _canvasKey,
-                          width: widget.template.canvasWidth.toDouble(),
-                          height: widget.template.canvasHeight.toDouble(),
-                          child: _buildCanvas(page, 1 / fitScale),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+                // Page zoomable (voir section ZOOM)
+                _buildZoomableCanvas(page),
 
                 // Fond grisé : couvre tout sauf le panneau (dessiné après,
                 // donc par-dessus). Un clic dessus ferme le panneau.
@@ -173,8 +162,204 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: Container(
-        height: 60,
+      bottomNavigationBar: _buildZoomBar(),
+    );
+  }
+
+
+  //////////////////////////////////////////////////////
+  //                      ZOOM                        //
+  //////////////////////////////////////////////////////
+
+  // Principe : la page est dessinée à l'échelle  fitScale × _zoom
+  //   - fitScale : échelle où la page entière tient dans la zone (= 100 %) ;
+  //   - _zoom    : de 1 (100 %) à 5 (500 %).
+  // _pan est la position du coin haut-gauche de la page dans la zone
+  // d'affichage (pixels écran). Quand la page est plus petite que la zone
+  // dans une direction, elle y est centrée ; sinon on peut la déplacer,
+  // sans laisser de vide sur les bords.
+
+  static const double _minZoom = 1;
+  static const double _maxZoom = 5;
+  /// Multiplicateur des boutons [−] / [+].
+  static const double _zoomStep = 1.25;
+
+  double _zoom = 1;
+  Offset _pan = Offset.zero;
+
+  // Dernières valeurs connues de l'affichage (mises à jour à chaque
+  // build), utilisées par la souris et les boutons entre deux builds.
+  Size _viewportSize = Size.zero;
+  double _fitScale = 1;
+
+  // Vrai pendant un déplacement de la vue au clic molette
+  bool _isPanningView = false;
+
+  /// Échelle réelle : pixels écran par pixel de la page.
+  double get _scale => _fitScale * _zoom;
+
+  /// Taille de la page à l'écran, à l'échelle actuelle.
+  Size get _scaledCanvasSize => Size(
+        widget.template.canvasWidth * _scale,
+        widget.template.canvasHeight * _scale,
+      );
+
+  /// Corrige une position de page : centrée si elle tient dans la zone,
+  /// sinon gardée sans vide sur les bords.
+  Offset _clampPan(Offset pan) {
+    final Size page = _scaledCanvasSize;
+    double clampAxis(double value, double pageLength, double viewLength) {
+      if (pageLength <= viewLength) return (viewLength - pageLength) / 2; // centrée
+      return value.clamp(viewLength - pageLength, 0.0);
+    }
+    return Offset(
+      clampAxis(pan.dx, page.width, _viewportSize.width),
+      clampAxis(pan.dy, page.height, _viewportSize.height),
+    );
+  }
+
+  /// Change le zoom en gardant fixe le point de la page situé sous
+  /// [focal] (la souris, ou le centre de la zone pour les boutons).
+  void _setZoom(double newZoom, Offset focal) {
+    newZoom = newZoom.clamp(_minZoom, _maxZoom);
+    // Point de la page (pixels de la page) actuellement sous le focal…
+    final Offset pagePoint = (focal - _pan) / _scale;
+    setState(() {
+      _zoom = newZoom;
+      // …qui doit y rester après le zoom
+      _pan = _clampPan(focal - pagePoint * _scale);
+    });
+  }
+
+  /// Déplace la vue de [delta] pixels écran.
+  void _panView(Offset delta) {
+    setState(() => _pan = _clampPan(_pan + delta));
+  }
+
+  /// Fin du déplacement de la vue au clic molette.
+  void _stopPanningView() {
+    if (_isPanningView) setState(() => _isPanningView = false);
+  }
+
+  /// Retour à la page entière (100 %, centrée). Appelé aussi au
+  /// changement de page.
+  void _resetZoom() {
+    _zoom = 1;
+    _pan = Offset.zero; // recentrée par _clampPan au prochain build
+  }
+
+  /// Molette : Ctrl → zoom vers la souris ; Maj → défilement horizontal ;
+  /// sinon → défilement vertical.
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is! PointerScrollEvent) return;
+    final Offset scroll = event.scrollDelta;
+    if (HardwareKeyboard.instance.isControlPressed) {
+      // Molette vers le haut (dy < 0) → zoom avant ; exp : zoom régulier
+      _setZoom(_zoom * math.exp(-scroll.dy / 400), event.localPosition);
+    } else if (HardwareKeyboard.instance.isShiftPressed) {
+      // Certaines souris envoient déjà dx avec Maj, d'autres seulement dy
+      _panView(Offset(-(scroll.dx != 0 ? scroll.dx : scroll.dy), 0));
+    } else {
+      _panView(Offset(-scroll.dx, -scroll.dy));
+    }
+  }
+
+  /// La page, zoomée et positionnée dans la zone d'affichage.
+  /// Un Listener (et non un GestureDetector) capte molette et clic
+  /// molette : il n'entre pas en concurrence avec les gestes des zones,
+  /// qui n'écoutent que le clic gauche.
+  Widget _buildZoomableCanvas(PageModel page) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        _viewportSize = constraints.biggest;
+        // 100 % = la page entière tient dans la zone
+        _fitScale = math.min(
+          constraints.maxWidth / widget.template.canvasWidth,
+          constraints.maxHeight / widget.template.canvasHeight,
+        );
+        // La fenêtre a pu changer de taille : on revalide la position
+        _pan = _clampPan(_pan);
+        final Size scaled = _scaledCanvasSize;
+
+        return Listener(
+          onPointerSignal: _onPointerSignal,
+          // Clic molette : début / suite / fin du déplacement de la vue
+          // (setState : le curseur "main fermée" s'affiche / disparaît)
+          onPointerDown: (event) {
+            if (event.buttons & kMiddleMouseButton != 0) {
+              setState(() => _isPanningView = true);
+            }
+          },
+          onPointerMove: (event) {
+            if (_isPanningView) _panView(event.delta);
+          },
+          onPointerUp: (_) => _stopPanningView(),
+          onPointerCancel: (_) => _stopPanningView(),
+          child: MouseRegion(
+            cursor: _isPanningView ? SystemMouseCursors.grabbing : MouseCursor.defer,
+            child: ClipRect(
+              child: Stack(
+                children: [
+                  Positioned(
+                    left: _pan.dx,
+                    top: _pan.dy,
+                    width: scaled.width,
+                    height: scaled.height,
+                    // La page garde sa taille réelle (pixels de la page) ;
+                    // FittedBox la réduit/agrandit à la taille affichée.
+                    child: FittedBox(
+                      fit: BoxFit.fill,
+                      child: SizedBox(
+                        key: _canvasKey,
+                        width: widget.template.canvasWidth.toDouble(),
+                        height: widget.template.canvasHeight.toDouble(),
+                        // 1 / _scale : pixels de la page pour 1 pixel écran
+                        // (poignées et bordures gardent leur taille écran)
+                        child: _buildCanvas(page, 1 / _scale),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Barre du bas : [−] pourcentage [+] et « Page entière ».
+  Widget _buildZoomBar() {
+    // Les boutons zooment vers le centre de la zone d'affichage
+    final Offset center = _viewportSize.center(Offset.zero);
+
+    return BottomAppBar(
+      height: 56,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          IconButton(
+            icon: const Icon(Icons.zoom_out),
+            tooltip: 'Zoom arrière',
+            onPressed: _zoom > _minZoom ? () => _setZoom(_zoom / _zoomStep, center) : null,
+          ),
+          // Largeur fixe : le texte ne fait pas bouger les boutons
+          SizedBox(
+            width: 56,
+            child: Text('${(_zoom * 100).round()} %', textAlign: TextAlign.center),
+          ),
+          IconButton(
+            icon: const Icon(Icons.zoom_in),
+            tooltip: 'Zoom avant (ou Ctrl + molette)',
+            onPressed: _zoom < _maxZoom ? () => _setZoom(_zoom * _zoomStep, center) : null,
+          ),
+          const SizedBox(width: 16),
+          TextButton.icon(
+            icon: const Icon(Icons.fit_screen),
+            label: const Text('Page entière'),
+            onPressed: _zoom != 1 ? () => setState(_resetZoom) : null,
+          ),
+        ],
       ),
     );
   }
@@ -207,10 +392,11 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
               tooltip: 'Ajouter une zone photo',
               onPressed: _addPhotoZone,
             ),
+            // Ouvre le menu des jauges ; la jauge apparaît au centre
             IconButton(
               icon: const Icon(Icons.star_half_rounded),
               tooltip: 'Ajouter une jauge',
-              onPressed: () { /* à venir */ },
+              onPressed: _addRatingZone,
             ),
             // Menu : changer / supprimer le fond de la page affichée
             PopupMenuButton<String>(
@@ -272,6 +458,11 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
         .getPhotoZones()
         .where((zone) => zone.parentPage == page.id)
         .toList();
+    final List<RatingZone> ratingZones = context
+        .watch<RatingZoneProvider>()
+        .getRatingZones()
+        .where((zone) => zone.parentPage == page.id)
+        .toList();
 
     return DragTarget<String>(
       // N'accepte que les boutons "zone de texte" et "texte fixe"
@@ -322,6 +513,28 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
                 onStartEditing: (controller) => _startEditingZone(zone.id, controller),
                 onRectChanged: (rect) => _saveZoneRect(zone.id, rect),
                 onContentChanged: (json) => _saveZoneContent(zone.id, json),
+                onDelete: () => _deleteZone(zone.id),
+              ),
+
+            // Jauges : au premier plan, au-dessus de tout le reste
+            for (final RatingZone zone in ratingZones)
+              RatingZoneWidget(
+                key: ValueKey(zone.id),
+                zone: zone,
+                canvasSize: canvasSize,
+                uiScale: uiScale,
+                isSelected: zone.id == _selectedZoneId,
+                isEditing: zone.id == _editingZoneId,
+                onSelect: () => _selectZone(zone.id),
+                onStartIconResize: () => _startIconResize(zone.id),
+                onRectChanged: (rect) => _saveRatingZone(zone.copyWith(
+                  topLeftCornerX: rect.left,
+                  topLeftCornerY: rect.top,
+                  width: rect.width,
+                  height: rect.height,
+                )),
+                onIconSizeChanged: (size) => _saveRatingZone(zone.copyWith(iconSize: size)),
+                onOpenOptions: () => _openRatingOptions(zone),
                 onDelete: () => _deleteZone(zone.id),
               ),
 
@@ -407,6 +620,8 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
   void _syncZonesWithPage(String pageId) {
     if (_zonesPageId == pageId) return;
     _zonesPageId = pageId;
+    // Nouvelle page : retour au zoom initial (page entière)
+    _resetZoom();
     _selectedZoneId = null;
     _editingZoneId = null;
     _editingController = null;
@@ -415,6 +630,7 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
       if (!mounted) return;
       context.read<TextZoneProvider>().loadTextZonesFromPage(pageId);
       context.read<PhotoZoneProvider>().loadPhotoZonesFromPage(pageId);
+      context.read<RatingZoneProvider>().loadRatingZonesFromPage(pageId);
     });
   }
 
@@ -547,19 +763,157 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
     await _runSafely(() => textZoneProvider.updateTextZone(id: id, content: json));
   }
 
-  /// Supprime une zone, texte ou photo (clic droit → Supprimer, ou Suppr).
-  /// Le type se reconnaît au début de l'ID ("photoZone_…" / "textZone_…").
+  /// Supprime une zone, texte, photo ou jauge (clic droit → Supprimer, ou
+  /// Suppr). Le type se reconnaît au début de l'ID ("photoZone_…",
+  /// "ratingZone_…", "textZone_…").
   Future<void> _deleteZone(String id) async {
     final textZoneProvider = context.read<TextZoneProvider>();
     final photoZoneProvider = context.read<PhotoZoneProvider>();
+    final ratingZoneProvider = context.read<RatingZoneProvider>();
     if (_selectedZoneId == id) _clearSelection();
-    await _runSafely(() => _isPhotoZone(id)
-        ? photoZoneProvider.deletePhotoZone(id)
-        : textZoneProvider.deleteTextZone(id));
+    await _runSafely(() {
+      if (id.startsWith('photoZone_')) return photoZoneProvider.deletePhotoZone(id);
+      if (id.startsWith('ratingZone_')) return ratingZoneProvider.deleteRatingZone(id);
+      return textZoneProvider.deleteTextZone(id);
+    });
   }
 
-  /// Vrai si [id] désigne une zone photo.
-  bool _isPhotoZone(String id) => id.startsWith('photoZone_');
+
+  //////////////////////////////////////////////////////
+  //                     JAUGES                       //
+  //////////////////////////////////////////////////////
+
+  /// Réglages d'une nouvelle jauge.
+  static const int _newRatingCount = 5;
+  /// Largeur d'une icône, en fraction de la largeur de la page.
+  static const double _newRatingIconWidth = 0.06;
+
+  /// Menu des jauges → jauge créée au centre de la page, sur une ligne,
+  /// avec un peu d'espace entre les icônes, puis sélectionnée.
+  Future<void> _addRatingZone() async {
+    final String? pageId = _zonesPageId;
+    if (pageId == null) return;
+    final ratingZoneProvider = context.read<RatingZoneProvider>();
+
+    final String? ratingId = await RatingPickerDialog.show(context);
+    if (ratingId == null) return; // annulé
+
+    await _runSafely(() async {
+      final RatingImages images = await RatingImages.load(ratingId);
+      final double pageW = widget.template.canvasWidth.toDouble();
+      final double pageH = widget.template.canvasHeight.toDouble();
+
+      // Icône et cadre en pixels : cadre minimal + 30 % d'espace en largeur
+      final double iconW = _newRatingIconWidth * pageW;
+      final Size icon = Size(iconW, iconW / images.aspectRatio);
+      final Size minFrame = RatingGeometry.minFrameSize(
+        layout: RatingLayout.line,
+        count: _newRatingCount,
+        rowCount: 2,
+        icon: icon,
+      );
+      final double frameW = math.min(minFrame.width * 1.3, pageW);
+      final double frameH = math.min(minFrame.height, pageH);
+
+      final String id = await ratingZoneProvider.addRatingZone(RatingZone(
+        id: '',      // calculé par le service
+        parentPage: pageId,
+        ratingId: ratingId,
+        width: frameW / pageW,
+        height: frameH / pageH,
+        iconSize: iconW / pageW,
+        topLeftCornerX: (1 - frameW / pageW) / 2,
+        topLeftCornerY: (1 - frameH / pageH) / 2,
+        currentValue: 0,
+        maxValue: _newRatingCount,
+        layout: RatingLayout.line,
+        rowCount: 2,
+        showEmpty: true,
+        zOrder: 0,   // calculé par le service
+      ));
+      _selectZone(id);
+    });
+  }
+
+  /// Double-clic sur une jauge : mode "taille des icônes" (pas de barre
+  /// Quill : _editingController reste null).
+  void _startIconResize(String id) {
+    setState(() {
+      _selectedZoneId = id;
+      _editingZoneId = id;
+      _editingController = null;
+    });
+    _canvasFocus.requestFocus();
+  }
+
+  /// Enregistre une jauge modifiée (position, taille, options).
+  Future<void> _saveRatingZone(RatingZone zone) async {
+    final ratingZoneProvider = context.read<RatingZoneProvider>();
+    await _runSafely(() => ratingZoneProvider.updateRatingZone(zone));
+  }
+
+  /// Clic droit → Options… : applique les nouvelles options, puis s'assure
+  /// que les icônes ne se superposent pas :
+  /// 1. le cadre grandit si besoin (sans sortir de la page) ;
+  /// 2. si la page est trop petite, ce sont les icônes qui rétrécissent.
+  Future<void> _openRatingOptions(RatingZone zone) async {
+    final RatingOptions? options = await RatingOptionsDialog.show(context, (
+      count: zone.maxValue,
+      value: zone.currentValue,
+      showEmpty: zone.showEmpty,
+      layout: zone.layout,
+      rowCount: zone.rowCount,
+    ));
+    if (options == null) return; // annulé
+
+    await _runSafely(() async {
+      final RatingImages images = await RatingImages.load(zone.ratingId);
+      final double pageW = widget.template.canvasWidth.toDouble();
+      final double pageH = widget.template.canvasHeight.toDouble();
+
+      // Icône et cadre actuels, en pixels
+      double iconW = zone.iconSize * pageW;
+      final Size minFrame = RatingGeometry.minFrameSize(
+        layout: options.layout,
+        count: options.count,
+        rowCount: options.rowCount,
+        icon: Size(iconW, iconW / images.aspectRatio),
+      );
+
+      // 1. Cadre agrandi jusqu'au minimum, limité à la page
+      final double frameW = math.min(math.max(zone.width * pageW, minFrame.width), pageW);
+      final double frameH = math.min(math.max(zone.height * pageH, minFrame.height), pageH);
+
+      // 2. Icônes réduites si le cadre (limité par la page) est trop petit
+      iconW = math.min(
+        iconW,
+        RatingGeometry.maxIconWidth(
+          layout: options.layout,
+          count: options.count,
+          rowCount: options.rowCount,
+          frame: Size(frameW, frameH),
+          iconAspectRatio: images.aspectRatio,
+        ),
+      );
+
+      // Le cadre agrandi ne doit pas déborder : on le recule si besoin
+      final double left = math.min(zone.topLeftCornerX * pageW, pageW - frameW);
+      final double top = math.min(zone.topLeftCornerY * pageH, pageH - frameH);
+
+      await _saveRatingZone(zone.copyWith(
+        maxValue: options.count,
+        currentValue: options.value,
+        showEmpty: options.showEmpty,
+        layout: options.layout,
+        rowCount: options.rowCount,
+        iconSize: iconW / pageW,
+        width: frameW / pageW,
+        height: frameH / pageH,
+        topLeftCornerX: left / pageW,
+        topLeftCornerY: top / pageH,
+      ));
+    });
+  }
 
 
   //////////////////////////////////////////////////////

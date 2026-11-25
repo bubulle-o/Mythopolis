@@ -28,17 +28,62 @@ class DatabaseHelper {
   //                 INITIALISATION                   //
   //////////////////////////////////////////////////////
 
+  /// Version actuelle du schéma. À augmenter de 1 à chaque changement
+  /// de structure, en ajoutant l'étape correspondante dans _migrate.
+  static const int _schemaVersion = 2;
+
   Future<Database> _initDatabase() async {
     String path = join(await getDatabasesPath(), 'database.db');
     return await openDatabase(
       path,
-      version: 1,
-      onCreate: _createSchema,
+      version: _schemaVersion,
+      // Base neuve : schéma de la version 1, puis toutes les migrations.
+      // Ainsi une base neuve et une base mise à jour sont identiques.
+      onCreate: (db, version) async {
+        await _createSchema(db, 1);
+        await _migrate(db, 1, version);
+      },
+      // Base existante plus ancienne : seulement les migrations manquantes
+      onUpgrade: _migrate,
       onOpen: (db) async {
         // Active les clés étrangères à chaque ouverture (désactivées par défaut sur SQLite)
         await db.execute('PRAGMA foreign_keys = ON');
       },
     );
+  }
+
+
+  //////////////////////////////////////////////////////
+  //                   MIGRATIONS                     //
+  //////////////////////////////////////////////////////
+
+  /// Fait passer la base de [from] à [to], une version après l'autre.
+  /// ALTER TABLE ajoute des colonnes sans perdre les données existantes.
+  Future<void> _migrate(Database db, int from, int to) async {
+    // ── v1 → v2 : jauges ──────────────────────────────
+    if (from < 2) {
+      // ratings : une ligne = une couleur d'un type de jauge
+      //   name      = nom du type (ex. "rond")
+      //   color     = couleur (ex. "jaune"), null pour une jauge perso
+      //   isBuiltIn = 1 si images dans les assets, 0 si fichiers copiés
+      await db.execute('ALTER TABLE ratings ADD COLUMN color TEXT');
+      await db.execute(
+          'ALTER TABLE ratings ADD COLUMN isBuiltIn INTEGER NOT NULL DEFAULT 0');
+
+      // ratingZones : cadre et disposition des icônes
+      //   height       = hauteur du cadre (fraction de la page)
+      //   layout       = "line", "rows" ou "circle"
+      //   rowCount     = nombre de lignes (disposition "rows")
+      //   showEmpty    = 1 si les icônes vides sont visibles en lecture
+      await db.execute(
+          'ALTER TABLE ratingZones ADD COLUMN height REAL NOT NULL DEFAULT 0.05');
+      await db.execute(
+          "ALTER TABLE ratingZones ADD COLUMN layout TEXT NOT NULL DEFAULT 'line'");
+      await db.execute(
+          'ALTER TABLE ratingZones ADD COLUMN rowCount INTEGER NOT NULL DEFAULT 2');
+      await db.execute(
+          'ALTER TABLE ratingZones ADD COLUMN showEmpty INTEGER NOT NULL DEFAULT 1');
+    }
   }
 
 
