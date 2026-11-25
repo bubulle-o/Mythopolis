@@ -21,11 +21,24 @@ const String kPlaceholderText =
     "peut-être simplement à me mettre au service de la communauté, à faire le don, "
     "le don de soi…";
 
+/// Contenu d'un texte fixe tout juste créé (modifiable dans la template).
+const String kDefaultFixedText = 'Texte par défaut';
+
 /// Convertit un texte brut en Delta JSON, le format attendu par Quill
 /// et stocké dans la colonne `content` des zones de texte.
 String textToDeltaJson(String text) {
   final Document doc = Document();
   doc.insert(0, text);
+  return jsonEncode(doc.toDelta().toJson());
+}
+
+/// Comme [textToDeltaJson], mais avec le texte centré.
+/// L'alignement est un style de paragraphe : on l'applique sur tout le
+/// document (y compris le retour à la ligne final qui le porte).
+String centeredTextToDeltaJson(String text) {
+  final Document doc = Document();
+  doc.insert(0, text);
+  doc.format(0, doc.length, Attribute.centerAlignment);
   return jsonEncode(doc.toDelta().toJson());
 }
 

@@ -1,5 +1,17 @@
 import 'dart:io';
+import 'dart:math' as math;
+import 'package:flutter/services.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:mythopolis/models/photo_zone.dart';
+import 'package:mythopolis/models/text_zone.dart';
+import 'package:mythopolis/providers/photo_zone_provider.dart';
+import 'package:mythopolis/screens/widgets/photo_zone_widget.dart';
+import 'package:mythopolis/screens/widgets/shape_picker_dialog.dart';
+import 'package:mythopolis/utils/shape_catalog.dart';
+import 'package:mythopolis/providers/text_zone_provider.dart';
+import 'package:mythopolis/screens/widgets/quill_toolbar_editor.dart';
+import 'package:mythopolis/screens/widgets/text_zone_widget.dart';
 import 'package:mythopolis/models/crop_area.dart';
 import 'package:mythopolis/models/page_model.dart';
 import 'package:mythopolis/screens/widgets/background_crop_dialog.dart';
@@ -29,6 +41,22 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
   // Vrai pendant le recadrage/compression d'un fond (barre de progression)
   bool _isProcessingBackground = false;
 
+  // ── Zones de texte ────────────────────────────────
+  // Page dont les zones sont chargées dans TextZoneProvider
+  String? _zonesPageId;
+  // Zone sélectionnée (bordure + poignées), ou null
+  String? _selectedZoneId;
+  // Zone en mode format (double-clic) et son controller Quill,
+  // branché sur la barre d'outils "format seul"
+  String? _editingZoneId;
+  QuillController? _editingController;
+
+  // Repère le canvas pour convertir la position d'un dépôt (drop)
+  // en coordonnées du canvas
+  final GlobalKey _canvasKey = GlobalKey();
+  // Focus de l'écran, pour les raccourcis clavier (Suppr, Échap)
+  final FocusNode _canvasFocus = FocusNode();
+
 
   //////////////////////////////////////////////////////
   //                 INITIALISATION                   //
@@ -44,6 +72,12 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
   }
 
   @override
+  void dispose() {
+    _canvasFocus.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final pageProvider = context.watch<PageProvider>();
     List<PageModel> allpages = pageProvider.getPages();
@@ -53,29 +87,53 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
     }
     // Filet de sécurité : l'index ne doit jamais sortir de la liste
     currentPage = currentPage.clamp(0, allpages.length - 1);
-    final String? chemin = allpages[currentPage].backgroundPath;
+    final PageModel page = allpages[currentPage];
+    _syncZonesWithPage(page.id);
 
+    // Raccourcis clavier : Suppr supprime la zone sélectionnée,
+    // Échap désélectionne. Actifs tant que _canvasFocus a le focus.
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.delete): _deleteSelectedZone,
+        const SingleActivator(LogicalKeyboardKey.escape): _clearSelection,
+      },
+      child: Focus(
+        focusNode: _canvasFocus,
+        autofocus: true,
+        child: _buildScaffold(allpages, page),
+      ),
+    );
+  }
+
+  Widget _buildScaffold(List<PageModel> allpages, PageModel page) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.template.name)),
       body: Column(
         children: [
           _buildToolbar(),
           if (_isProcessingBackground) const LinearProgressIndicator(),
+          // Barre Quill "format seul", visible pendant le mode format
+          if (_editingController != null) _buildFormatToolbar(),
 
           Expanded(
             child: Stack(
               children: [
                 LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
+                    // Échelle d'affichage du canvas (FittedBox contain) →
+                    // combien de pixels du canvas pour 1 pixel d'écran.
+                    final double fitScale = math.min(
+                      constraints.maxWidth / widget.template.canvasWidth,
+                      constraints.maxHeight / widget.template.canvasHeight,
+                    );
                     return Center(
                       child: FittedBox(
                         fit: BoxFit.contain,
                         child: SizedBox(
+                          key: _canvasKey,
                           width: widget.template.canvasWidth.toDouble(),
                           height: widget.template.canvasHeight.toDouble(),
-                          child: chemin == null
-                            ? Container(color: Colors.white)
-                            : Image.file(File(chemin)),
+                          child: _buildCanvas(page, 1 / fitScale),
                         ),
                       ),
                     );
@@ -131,20 +189,23 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
         scrollDirection: Axis.horizontal,
         child: Row(
           children: [
-            IconButton(
-              icon: const Icon(Icons.text_fields),
-              tooltip: 'Ajouter du texte',
-              onPressed: () { /* à venir */ },
+            // Texte fixe et zone de texte : même bouton, même mécanique
+            // (clic = au centre, glisser = à l'endroit du dépôt)
+            _buildAddTextButton(
+              isLocked: true,
+              icon: Icons.text_fields,
+              label: 'Texte fixe',
             ),
-            IconButton(
-              icon: const Icon(Icons.add_box_outlined),
-              tooltip: 'Ajouter une zone de texte',
-              onPressed: () { /* à venir */ },
+            _buildAddTextButton(
+              isLocked: false,
+              icon: Icons.add_box_outlined,
+              label: 'Zone de texte',
             ),
+            // Ouvre le menu des formes ; la zone apparaît au centre
             IconButton(
               icon: const Icon(Icons.add_photo_alternate_outlined),
               tooltip: 'Ajouter une zone photo',
-              onPressed: () { /* à venir */ },
+              onPressed: _addPhotoZone,
             ),
             IconButton(
               icon: const Icon(Icons.star_half_rounded),
@@ -182,6 +243,390 @@ class _ModifyTemplateScreenState extends State<ModifyTemplateScreen> {
         ),
       ),
     );
+  }
+
+
+  //////////////////////////////////////////////////////
+  //                     CANVAS                       //
+  //////////////////////////////////////////////////////
+
+  /// La page : fond + zones de texte, et cible du glisser-déposer.
+  /// Tout ici est en pixels du canvas (la FittedBox réduit l'ensemble).
+  /// [uiScale] : pixels du canvas pour 1 pixel d'écran.
+  Widget _buildCanvas(PageModel page, double uiScale) {
+    final String? chemin = page.backgroundPath;
+    final Size canvasSize = Size(
+      widget.template.canvasWidth.toDouble(),
+      widget.template.canvasHeight.toDouble(),
+    );
+
+    // Le provider peut encore contenir les zones de la page précédente
+    // pendant le chargement : on ne garde que celles de cette page.
+    final List<TextZone> zones = context
+        .watch<TextZoneProvider>()
+        .getTextZones()
+        .where((zone) => zone.parentPage == page.id)
+        .toList();
+    final List<PhotoZone> photoZones = context
+        .watch<PhotoZoneProvider>()
+        .getPhotoZones()
+        .where((zone) => zone.parentPage == page.id)
+        .toList();
+
+    return DragTarget<String>(
+      // N'accepte que les boutons "zone de texte" et "texte fixe"
+      onWillAcceptWithDetails: (details) =>
+          details.data == _textZoneDragData || details.data == _fixedTextDragData,
+      onAcceptWithDetails: (details) => _addTextZoneAt(
+        details.offset,
+        page.id,
+        isLocked: details.data == _fixedTextDragData,
+      ),
+      builder: (context, candidates, rejected) {
+        return Stack(
+          children: [
+            // Fond de page. Un clic sur le fond désélectionne la zone.
+            Positioned.fill(
+              child: GestureDetector(
+                onTap: _clearSelection,
+                child: chemin == null
+                    ? Container(color: Colors.white)
+                    : Image.file(File(chemin)),
+              ),
+            ),
+
+            // Zones photo, sous les zones de texte (un texte peut être
+            // posé sur une photo), dans l'ordre d'empilement
+            for (final PhotoZone zone in photoZones)
+              PhotoZoneWidget(
+                key: ValueKey(zone.id),
+                zone: zone,
+                canvasSize: canvasSize,
+                uiScale: uiScale,
+                isSelected: zone.id == _selectedZoneId,
+                onSelect: () => _selectZone(zone.id),
+                onRectChanged: (rect) => _savePhotoZoneRect(zone.id, rect),
+                onDelete: () => _deleteZone(zone.id),
+              ),
+
+            // Zones de texte, dans l'ordre d'empilement (zOrder croissant)
+            for (final TextZone zone in zones)
+              TextZoneWidget(
+                key: ValueKey(zone.id),
+                zone: zone,
+                canvasSize: canvasSize,
+                uiScale: uiScale,
+                isSelected: zone.id == _selectedZoneId,
+                isEditing: zone.id == _editingZoneId,
+                onSelect: () => _selectZone(zone.id),
+                onStartEditing: (controller) => _startEditingZone(zone.id, controller),
+                onRectChanged: (rect) => _saveZoneRect(zone.id, rect),
+                onContentChanged: (json) => _saveZoneContent(zone.id, json),
+                onDelete: () => _deleteZone(zone.id),
+              ),
+
+            // Survol pendant un glisser : léger voile pour montrer la cible
+            if (candidates.isNotEmpty)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: ColoredBox(
+                    color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.08),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+
+  //////////////////////////////////////////////////////
+  //                  ZONES DE TEXTE                  //
+  //////////////////////////////////////////////////////
+
+  // Les "zones" regroupent deux sortes d'éléments, distingués par isLocked :
+  // - zone de texte (isLocked = false) : placeholder, remplie dans la fiche ;
+  // - texte fixe   (isLocked = true)  : contenu tapé dans la template.
+
+  /// Données transportées par le glisser-déposer des boutons de la barre.
+  static const String _textZoneDragData = 'textZone';
+  static const String _fixedTextDragData = 'fixedText';
+
+  /// Taille d'une nouvelle zone de texte, en fractions de la page.
+  static const double _newZoneWidth = 0.4;
+  static const double _newZoneHeight = 0.15;
+  /// Un texte fixe est deux fois plus petit (quelques mots en général).
+  static const double _newFixedTextWidth = _newZoneWidth / 2;
+  static const double _newFixedTextHeight = _newZoneHeight / 2;
+
+  /// Bouton de la barre d'outils qui ajoute une zone de texte
+  /// ([isLocked] = false) ou un texte fixe ([isLocked] = true).
+  /// Clic : au centre de la page. Glisser sur la page : à cet endroit
+  /// (le DragTarget est dans _buildCanvas).
+  Widget _buildAddTextButton({
+    required bool isLocked,
+    required IconData icon,
+    required String label,
+  }) {
+    return Draggable<String>(
+      data: isLocked ? _fixedTextDragData : _textZoneDragData,
+      // Le "fantôme" suit la souris par son coin haut-gauche
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: _buildTextZoneDragFeedback(label),
+      child: IconButton(
+        icon: Icon(icon),
+        tooltip: 'Ajouter : $label '
+            '(clic : au centre, glisser : à l\'endroit voulu)',
+        onPressed: () => _addTextZoneAtCenter(isLocked: isLocked),
+      ),
+    );
+  }
+
+  /// Ce qui suit la souris pendant le glisser : un petit cadre.
+  Widget _buildTextZoneDragFeedback(String label) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: 120,
+        height: 50,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: colors.primary.withValues(alpha: 0.15),
+          border: Border.all(color: colors.primary, width: 2),
+        ),
+        child: Text(label),
+      ),
+    );
+  }
+
+  /// Charge les zones (texte et photo) quand la page affichée change
+  /// (appelé dans build). On sort aussi de la sélection : elle
+  /// concernait l'ancienne page.
+  void _syncZonesWithPage(String pageId) {
+    if (_zonesPageId == pageId) return;
+    _zonesPageId = pageId;
+    _selectedZoneId = null;
+    _editingZoneId = null;
+    _editingController = null;
+    // Pas de notifyListeners pendant un build : on décale d'un instant
+    Future.microtask(() {
+      if (!mounted) return;
+      context.read<TextZoneProvider>().loadTextZonesFromPage(pageId);
+      context.read<PhotoZoneProvider>().loadPhotoZonesFromPage(pageId);
+    });
+  }
+
+  /// Dépôt d'un bouton sur la page : crée une zone centrée sur la souris.
+  /// [globalOffset] est en coordonnées écran ; globalToLocal le convertit
+  /// en pixels du canvas (en tenant compte de la réduction FittedBox).
+  Future<void> _addTextZoneAt(
+    Offset globalOffset,
+    String pageId, {
+    required bool isLocked,
+  }) async {
+    final RenderBox? canvasBox =
+        _canvasKey.currentContext?.findRenderObject() as RenderBox?;
+    if (canvasBox == null) return;
+    final Offset local = canvasBox.globalToLocal(globalOffset);
+
+    // Centre de la zone = position de la souris, en fractions de la page
+    await _createTextZone(
+      pageId,
+      local.dx / canvasBox.size.width,
+      local.dy / canvasBox.size.height,
+      isLocked: isLocked,
+    );
+  }
+
+  /// Clic sur un bouton : crée une zone au centre de la page affichée.
+  Future<void> _addTextZoneAtCenter({required bool isLocked}) async {
+    final String? pageId = _zonesPageId;
+    if (pageId == null) return;
+    await _createTextZone(pageId, 0.5, 0.5, isLocked: isLocked);
+  }
+
+  /// Crée une zone centrée sur ([centerX], [centerY]) — en fractions de
+  /// la page — en la gardant entièrement dans la page, puis la sélectionne.
+  /// Le service y met le placeholder (zone de texte) ou « Texte par
+  /// défaut » (texte fixe).
+  Future<void> _createTextZone(
+    String pageId,
+    double centerX,
+    double centerY, {
+    required bool isLocked,
+  }) async {
+    final double width = isLocked ? _newFixedTextWidth : _newZoneWidth;
+    final double height = isLocked ? _newFixedTextHeight : _newZoneHeight;
+
+    // Coin haut-gauche = centre - demi-taille, bloqué aux bords
+    final double x = (centerX - width / 2).clamp(0, 1 - width);
+    final double y = (centerY - height / 2).clamp(0, 1 - height);
+
+    final textZoneProvider = context.read<TextZoneProvider>();
+    await _runSafely(() async {
+      final String id = await textZoneProvider.addTextZone(
+        parentPage: pageId,
+        width: width,
+        height: height,
+        topLeftCornerX: x,
+        topLeftCornerY: y,
+        isLocked: isLocked,
+      );
+      _selectZone(id);
+    });
+  }
+
+  /// Sélectionne une zone. Sort du mode format si c'était une autre zone.
+  void _selectZone(String id) {
+    if (!mounted) return;
+    setState(() {
+      if (_editingZoneId != id) {
+        _editingZoneId = null;
+        _editingController = null;
+      }
+      _selectedZoneId = id;
+    });
+    // Récupère le focus pour que la touche Suppr fonctionne
+    _canvasFocus.requestFocus();
+  }
+
+  /// Désélectionne tout et sort du mode format.
+  void _clearSelection() {
+    setState(() {
+      _selectedZoneId = null;
+      _editingZoneId = null;
+      _editingController = null;
+    });
+  }
+
+  /// Double-clic sur une zone : branche son controller sur la barre format.
+  void _startEditingZone(String id, QuillController controller) {
+    setState(() {
+      _selectedZoneId = id;
+      _editingZoneId = id;
+      _editingController = controller;
+    });
+  }
+
+  /// Barre Quill "format seul" + bouton pour sortir du mode format.
+  Widget _buildFormatToolbar() {
+    return Container(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Row(
+        children: [
+          Expanded(
+            child: QuillToolbar(controller: _editingController!, formatOnly: true),
+          ),
+          TextButton.icon(
+            icon: const Icon(Icons.check),
+            label: const Text('Terminer'),
+            onPressed: _clearSelection,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Sauvegarde la position/taille d'une zone (fractions de la page).
+  Future<void> _saveZoneRect(String id, Rect rect) async {
+    final textZoneProvider = context.read<TextZoneProvider>();
+    await _runSafely(() => textZoneProvider.updateTextZone(
+          id: id,
+          topLeftCornerX: rect.left,
+          topLeftCornerY: rect.top,
+          width: rect.width,
+          height: rect.height,
+        ));
+  }
+
+  /// Sauvegarde le contenu (Delta JSON) après un changement de style.
+  Future<void> _saveZoneContent(String id, String json) async {
+    final textZoneProvider = context.read<TextZoneProvider>();
+    await _runSafely(() => textZoneProvider.updateTextZone(id: id, content: json));
+  }
+
+  /// Supprime une zone, texte ou photo (clic droit → Supprimer, ou Suppr).
+  /// Le type se reconnaît au début de l'ID ("photoZone_…" / "textZone_…").
+  Future<void> _deleteZone(String id) async {
+    final textZoneProvider = context.read<TextZoneProvider>();
+    final photoZoneProvider = context.read<PhotoZoneProvider>();
+    if (_selectedZoneId == id) _clearSelection();
+    await _runSafely(() => _isPhotoZone(id)
+        ? photoZoneProvider.deletePhotoZone(id)
+        : textZoneProvider.deleteTextZone(id));
+  }
+
+  /// Vrai si [id] désigne une zone photo.
+  bool _isPhotoZone(String id) => id.startsWith('photoZone_');
+
+
+  //////////////////////////////////////////////////////
+  //                   ZONES PHOTO                    //
+  //////////////////////////////////////////////////////
+
+  /// Largeur d'une nouvelle zone photo, en fraction de la page ;
+  /// la hauteur découle des proportions de la forme.
+  static const double _newPhotoZoneWidth = 0.3;
+
+  /// Menu des formes → zone créée au centre de la page, aux proportions
+  /// de la forme, puis sélectionnée.
+  Future<void> _addPhotoZone() async {
+    final String? pageId = _zonesPageId;
+    if (pageId == null) return;
+    final photoZoneProvider = context.read<PhotoZoneProvider>();
+
+    final String? shapePath = await ShapePickerDialog.show(context);
+    if (shapePath == null) return; // annulé
+
+    await _runSafely(() async {
+      final ShapeInfo shape = await ShapeCatalog.load(shapePath);
+      final double pageW = widget.template.canvasWidth.toDouble();
+      final double pageH = widget.template.canvasHeight.toDouble();
+
+      // Taille en pixels : 30 % de la largeur de page, hauteur selon les
+      // proportions ; réduite si elle dépasse 60 % de la hauteur.
+      double widthPx = _newPhotoZoneWidth * pageW;
+      double heightPx = widthPx / shape.aspectRatio;
+      if (heightPx > 0.6 * pageH) {
+        heightPx = 0.6 * pageH;
+        widthPx = heightPx * shape.aspectRatio;
+      }
+
+      // En fractions de la page, centrée
+      final double width = widthPx / pageW;
+      final double height = heightPx / pageH;
+      final String id = await photoZoneProvider.addPhotoZone(
+        parentPage: pageId,
+        shapePath: shapePath,
+        width: width,
+        height: height,
+        topLeftCornerX: (1 - width) / 2,
+        topLeftCornerY: (1 - height) / 2,
+      );
+      _selectZone(id);
+    });
+  }
+
+  /// Sauvegarde la position/taille d'une zone photo (fractions de la page).
+  Future<void> _savePhotoZoneRect(String id, Rect rect) async {
+    final photoZoneProvider = context.read<PhotoZoneProvider>();
+    await _runSafely(() => photoZoneProvider.updatePhotoZone(
+          id: id,
+          topLeftCornerX: rect.left,
+          topLeftCornerY: rect.top,
+          width: rect.width,
+          height: rect.height,
+        ));
+  }
+
+  /// Touche Suppr : supprime la zone sélectionnée.
+  /// Ignorée en mode format (on règle le style, pas la zone).
+  void _deleteSelectedZone() {
+    final String? id = _selectedZoneId;
+    if (id == null || _editingZoneId != null) return;
+    _deleteZone(id);
   }
 
 

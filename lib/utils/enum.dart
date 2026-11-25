@@ -64,3 +64,7 @@ enum SearchScope {
   notes,    // notes uniquement
   sheets,   // fiches uniquement
 }
+
+
+// Hauteur de la bannière des notes (lecture et édition), en pixels
+const double kNoteBannerHeight = 170;

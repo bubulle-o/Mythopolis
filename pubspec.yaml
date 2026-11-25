@@ -35,6 +35,13 @@ flutter:
 
   uses-material-design: true
 
+  # Formes des zones photo (PNG : forme opaque sur fond transparent).
+  # Tout PNG ajouté dans ce dossier apparaît dans le menu des formes.
+  assets:
+    - lib/graphism/photo_zone/
+    # Images du thème clair (fond de lecture des notes…)
+    - lib/graphism/light_theme/
+
   fonts:
     - family: Cardo
       fonts:

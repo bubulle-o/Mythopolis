@@ -20,7 +20,7 @@ class TextZoneService {
   /// Crée une zone de texte dans une page et retourne son ID.
   /// Le zOrder est calculé pour placer la zone au-dessus des existantes
   /// de la même page. Une zone non verrouillée reçoit le placeholder ;
-  /// un texte fixe ([isLocked] à true) naît vide.
+  /// un texte fixe ([isLocked] à true) reçoit « Texte par défaut », centré.
   Future<String> addTextZone({
     required String parentPage,
     required double width,
@@ -41,7 +41,8 @@ class TextZoneService {
     double zOrder = lastZOrder == null ? 1 : lastZOrder.toDouble() + 1;
 
     // Le contenu est stocké en Delta JSON, jamais en texte brut
-    String? content = isLocked ? null : placeholderDelta();
+    String content =
+        isLocked ? centeredTextToDeltaJson(kDefaultFixedText) : placeholderDelta();
 
     TextZone zone = TextZone(
       id: id,

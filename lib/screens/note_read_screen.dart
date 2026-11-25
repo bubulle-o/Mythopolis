@@ -10,7 +10,9 @@ import 'dart:convert';
 import 'package:mythopolis/services/note_service.dart';
 import 'dart:io';
 
-import 'package:mythopolis/utils/enum.dart'; 
+import 'package:mythopolis/providers/settings_provider.dart';
+import 'package:mythopolis/utils/enum.dart';
+import 'package:provider/provider.dart';
 
 
 //////////////////////////////////////////////////////
@@ -77,33 +79,85 @@ class _NoteReadScreenState extends State<NoteReadScreen> {
           ),
         ],
       ),
-      body : Column(
-        children: [
-          // Affichage de la bannière
-          if (widget.note.bannerPath != null)
-            Container(
-              height: 135,
-              width: double.infinity,
-              child: Image.file(File(widget.note.bannerPath!), fit: BoxFit.cover,  alignment: widget.note.bannerAlignment.toFlutterAlignment()),
-              
-            ), 
-          // Affichage du contenu en lecture seule avec marges
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 64, vertical: 24),
-              child: QuillEditor.basic(
-                controller: _quillController,
-                config: QuillEditorConfig(
-                  onLaunchUrl: _handleLinkTap,
-                  embedBuilders: FlutterQuillEmbeds.editorBuilders(),
-                ),
-              ),
-            ),
-          )
-        ]
-      )
+      body: _buildScrollingContent(),
     );
   }
+
+  /// Bannière, texte et fond défilent ENSEMBLE : c'est le
+  /// SingleChildScrollView qui défile, l'éditeur Quill ne défile plus
+  /// lui-même (scrollable: false). La bannière disparaît en descendant.
+  ///
+  /// Le fond (thème clair uniquement) est une image à la largeur de la
+  /// fenêtre, répétée verticalement bout à bout (ImageRepeat.repeatY) :
+  /// plus le texte est long, plus il y a de copies, comme une image infinie.
+  /// Il commence sous la bannière.
+  Widget _buildScrollingContent() {
+    final bool isLight =
+        context.watch<SettingsProvider>().appTheme == AppTheme.light;
+    final bool hasBanner = widget.note.bannerPath != null;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: Column(
+            children: [
+              // Bannière (défile avec le texte)
+              if (hasBanner)
+                SizedBox(
+                  height: kNoteBannerHeight,
+                  width: double.infinity,
+                  child: Image.file(
+                    File(widget.note.bannerPath!),
+                    fit: BoxFit.cover,
+                    alignment: widget.note.bannerAlignment.toFlutterAlignment(),
+                  ),
+                ),
+              _buildTextOnBackground(
+                // Le fond couvre au moins le reste de l'écran, même
+                // quand la note est courte
+                minHeight: constraints.maxHeight - (hasBanner ? kNoteBannerHeight : 0),
+                isLight: isLight,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// Le texte de la note sur le fond "parchemin" répété.
+  Widget _buildTextOnBackground({required double minHeight, required bool isLight}) {
+    return Container(
+      constraints: BoxConstraints(minHeight: minHeight),
+      decoration: isLight
+          ? const BoxDecoration(
+              image: DecorationImage(
+                image: _scrollBackground,
+                fit: BoxFit.fitWidth,           // largeur de la fenêtre
+                alignment: Alignment.topCenter, // 1re copie en haut
+                repeat: ImageRepeat.repeatY,    // copies vers le bas
+              ),
+            )
+          : null,
+      padding: const EdgeInsets.symmetric(horizontal: 64, vertical: 24),
+      child: QuillEditor.basic(
+        controller: _quillController,
+        config: QuillEditorConfig(
+          scrollable: false, // c'est le SingleChildScrollView qui défile
+          onLaunchUrl: _handleLinkTap,
+          embedBuilders: FlutterQuillEmbeds.editorBuilders(),
+        ),
+      ),
+    );
+  }
+
+  /// Fond de lecture du thème clair. L'image d'origine fait 2480 × 3508 px
+  /// (2,6 Mo) : ResizeImage la décode à 1920 px de large, largement assez
+  /// pour un écran, et ~2× moins lourd en mémoire.
+  static const ImageProvider _scrollBackground = ResizeImage(
+    AssetImage('lib/graphism/light_theme/scroll_background.jpg'),
+    width: 1920,
+  );
 
 
 

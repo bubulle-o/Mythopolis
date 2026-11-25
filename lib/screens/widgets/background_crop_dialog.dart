@@ -74,6 +74,9 @@ class _BackgroundCropDialogState extends State<BackgroundCropDialog> {
   double _zoom = 1;
   /// Point de l'image (px originaux) situé au centre du cadre.
   Offset _center = Offset.zero;
+  /// Rotation de l'image en degrés (sens horaire), entre -180 et 180.
+  /// L'image tourne autour du centre du cadre ; le cadre, lui, reste droit.
+  double _rotation = 0;
 
   // Cadre courant (coordonnées de la zone d'affichage), recalculé à
   // chaque layout. Sert aux gestes, qui arrivent entre deux builds.
@@ -163,20 +166,52 @@ class _BackgroundCropDialogState extends State<BackgroundCropDialog> {
     );
   }
 
+  // ── Rotation : rappel ───────────────────────────────
+  // L'écran montre l'image tournée de _rotation. Pour passer d'un
+  // déplacement À L'ÉCRAN à un déplacement DANS L'IMAGE, on le fait
+  // tourner dans l'autre sens (-_rotation), puis on divise par l'échelle.
+
+  /// Angle en radians (Flutter et Dart travaillent en radians).
+  double get _radians => _rotation * math.pi / 180;
+
+  /// Fait tourner un vecteur de [radians] (sens horaire à l'écran).
+  static Offset _rotate(Offset v, double radians) {
+    final double c = math.cos(radians);
+    final double s = math.sin(radians);
+    return Offset(v.dx * c - v.dy * s, v.dx * s + v.dy * c);
+  }
+
+  /// Vecteur écran → vecteur dans l'image (pixels de l'image).
+  Offset _screenToImage(Offset v, double scale) => _rotate(v, -_radians) / scale;
+
+  /// Encombrement du cadre vu depuis l'image, en pixels ÉCRAN :
+  /// le cadre est droit à l'écran, donc "penché" dans l'image ; ceci est
+  /// la taille du rectangle droit qui l'englobe dans l'image.
+  /// Sans rotation : la taille du cadre elle-même.
+  Size get _rotatedFrameBounds {
+    final double c = math.cos(_radians).abs();
+    final double s = math.sin(_radians).abs();
+    final double w = _frame.width, h = _frame.height;
+    return Size(w * c + h * s, w * s + h * c);
+  }
+
   /// Zoom minimum : pixels écran par pixel image pour que l'image
-  /// couvre exactement le cadre (comme BoxFit.cover).
-  double get _minScale => math.max(
-        _frame.width / _imageWidth,
-        _frame.height / _imageHeight,
-      );
+  /// couvre exactement le cadre (comme BoxFit.cover), rotation comprise.
+  double get _minScale {
+    final Size bounds = _rotatedFrameBounds;
+    return math.max(bounds.width / _imageWidth, bounds.height / _imageHeight);
+  }
 
   /// Échelle réelle : pixels écran par pixel image.
   double get _scale => _minScale * _zoom;
 
   /// Empêche le cadre de sortir de l'image (pas de vide dans le cadre).
+  /// Le cadre penché est entièrement dans l'image si le rectangle droit
+  /// qui l'englobe y est.
   Offset _clampCenter(Offset center, double scale) {
-    final double halfW = _frame.width / (2 * scale);
-    final double halfH = _frame.height / (2 * scale);
+    final Size bounds = _rotatedFrameBounds;
+    final double halfW = bounds.width / (2 * scale);
+    final double halfH = bounds.height / (2 * scale);
     return Offset(
       center.dx.clamp(halfW, math.max(halfW, _imageWidth - halfW)),
       center.dy.clamp(halfH, math.max(halfH, _imageHeight - halfH)),
@@ -192,9 +227,9 @@ class _BackgroundCropDialogState extends State<BackgroundCropDialog> {
 
     // Point de l'image actuellement sous le focal…
     final Offset fromFrameCenter = focal - _frame.center;
-    final Offset imagePoint = _center + fromFrameCenter / oldScale;
+    final Offset imagePoint = _center + _screenToImage(fromFrameCenter, oldScale);
     // …qui doit y rester après le zoom.
-    final Offset newCenter = imagePoint - fromFrameCenter / newScale;
+    final Offset newCenter = imagePoint - _screenToImage(fromFrameCenter, newScale);
 
     setState(() {
       _zoom = newZoom;
@@ -206,21 +241,43 @@ class _BackgroundCropDialogState extends State<BackgroundCropDialog> {
   void _pan(Offset delta) {
     setState(() {
       // Glisser l'image vers la droite = le cadre voit plus à gauche
-      _center = _clampCenter(_center - delta / _scale, _scale);
+      _center = _clampCenter(_center - _screenToImage(delta, _scale), _scale);
     });
   }
 
-  /// Zone retenue, convertie en pixels de l'image originale.
+  /// Change l'angle. Le zoom (relatif au minimum) est conservé ; le
+  /// minimum, lui, grandit avec l'angle pour que l'image couvre le cadre.
+  void _setRotation(double degrees) {
+    setState(() {
+      _rotation = degrees;
+      _center = _clampCenter(_center, _scale);
+    });
+  }
+
+  /// Bouton ↻ (sens = 1) ou ↺ (sens = -1) : va au multiple de 90° le plus
+  /// proche dans ce sens ; si on y est déjà, au suivant.
+  /// Ex. ↻ : 30° → 90°, 90° → 180°, 180° → -90° (= 270°).
+  void _rotateToNextQuarter(int direction) {
+    final double quarters = _rotation / 90;
+    final bool onQuarter = (quarters - quarters.round()).abs() < 0.01;
+    final double target = onQuarter
+        ? (quarters.round() + direction) * 90.0
+        : (direction > 0 ? quarters.ceil() : quarters.floor()) * 90.0;
+    // Ramène dans ]-180, 180]
+    double wrapped = target;
+    if (wrapped > 180) wrapped -= 360;
+    if (wrapped <= -180) wrapped += 360;
+    _setRotation(wrapped);
+  }
+
+  /// Zone retenue, exprimée dans l'image originale (voir CropArea).
   CropArea _computeCropArea() {
-    final double w = _frame.width / _scale;
-    final double h = _frame.height / _scale;
-    final int x = (_center.dx - w / 2).round().clamp(0, _imageWidth.toInt() - 1);
-    final int y = (_center.dy - h / 2).round().clamp(0, _imageHeight.toInt() - 1);
     return (
-      x: x,
-      y: y,
-      width: w.round().clamp(1, _imageWidth.toInt() - x),
-      height: h.round().clamp(1, _imageHeight.toInt() - y),
+      centerX: _center.dx,
+      centerY: _center.dy,
+      width: _frame.width / _scale,
+      height: _frame.height / _scale,
+      rotation: _rotation,
     );
   }
 
@@ -271,8 +328,13 @@ class _BackgroundCropDialogState extends State<BackgroundCropDialog> {
             // La fenêtre a pu changer de taille : on revalide la position
             _center = _clampCenter(_center, _scale);
 
+            // Sans rotation, le point _center de l'image est au centre du
+            // cadre : l'image commence donc à topLeft.
             final double scale = _scale;
             final Offset topLeft = _frame.center - _center * scale;
+            // La rotation se fait ensuite autour de ce même point
+            // (_center * scale, mesuré depuis le coin de l'image).
+            final Offset pivot = _center * scale;
 
             return Listener(
               // Molette de la souris → zoom autour du pointeur
@@ -305,10 +367,15 @@ class _BackgroundCropDialogState extends State<BackgroundCropDialog> {
                         top: topLeft.dy,
                         width: _imageWidth * scale,
                         height: _imageHeight * scale,
-                        child: RawImage(
-                          image: image,
-                          fit: BoxFit.fill,
-                          filterQuality: FilterQuality.medium,
+                        child: Transform.rotate(
+                          angle: _radians,
+                          alignment: Alignment.topLeft,
+                          origin: pivot,
+                          child: RawImage(
+                            image: image,
+                            fit: BoxFit.fill,
+                            filterQuality: FilterQuality.medium,
+                          ),
                         ),
                       ),
                       // Voile + bordure du cadre ; ne capte pas les gestes
@@ -328,7 +395,7 @@ class _BackgroundCropDialogState extends State<BackgroundCropDialog> {
     );
   }
 
-  /// Slider de zoom, bouton Recentrer, Annuler / Valider.
+  /// Rotation, zoom, bouton Recentrer, Annuler / Valider.
   Widget _buildControls() {
     final bool ready = _displayImage != null;
 
@@ -340,6 +407,38 @@ class _BackgroundCropDialogState extends State<BackgroundCropDialog> {
         spacing: 16,
         runSpacing: 8,
         children: [
+          // ── Rotation : ↺  slider libre  angle  ↻ ──
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.rotate_left),
+                tooltip: 'Multiple de 90° précédent',
+                onPressed: ready ? () => _rotateToNextQuarter(-1) : null,
+              ),
+              SizedBox(
+                width: 200,
+                child: Slider(
+                  min: -180,
+                  max: 180,
+                  value: _rotation,
+                  onChanged: ready ? _setRotation : null,
+                ),
+              ),
+              // Largeur fixe : le texte ne fait pas bouger les boutons
+              SizedBox(
+                width: 48,
+                child: Text('${_rotation.round()}°', textAlign: TextAlign.center),
+              ),
+              IconButton(
+                icon: const Icon(Icons.rotate_right),
+                tooltip: 'Multiple de 90° suivant',
+                onPressed: ready ? () => _rotateToNextQuarter(1) : null,
+              ),
+            ],
+          ),
+
+          // ── Zoom ──
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [

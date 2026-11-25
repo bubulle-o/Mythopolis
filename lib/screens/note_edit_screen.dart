@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'dart:math' as math;
 
 
 //////////////////////////////////////////////////////
@@ -30,6 +31,8 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
 
   // Contrôleur Quill — gère le contenu ET l'historique Ctrl+Z nativement
   late QuillController _quillController;
+  // Défilement de la page (bannière + texte), partagé avec l'éditeur
+  final ScrollController _scrollController = ScrollController();
   late int _selectedHorizontal;
   late int _selectedVertical;
   late Note _currentNote;
@@ -64,6 +67,7 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   void dispose() {
     // OBLIGATOIRE : libérer la mémoire du contrôleur quand l'écran est détruit
     _quillController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -120,40 +124,73 @@ class _NoteEditScreenState extends State<NoteEditScreen> {
   //                    ÉDITEUR                       //
   //////////////////////////////////////////////////////
 
-  /// Assemble : barre d'outils réutilisable, puis bannière de la note
-  /// (si elle existe), puis la zone d'édition du texte.
+  /// Assemble : barre d'outils (fixe en haut), puis une zone qui défile
+  /// contenant la bannière de la note (si elle existe) et le texte.
+  /// La bannière défile avec le texte : elle disparaît quand on descend.
   Widget _buildEditor() {
+    const double verticalPadding = 24;
+
     return Column(
       children: [
-        // Barre d'outils réutilisable — ne connaît que le controller
+        // Barre d'outils réutilisable — ne connaît que le controller.
+        // Hors de la zone qui défile : toujours visible.
         QuillToolbar(controller: _quillController),
 
-        // Bannière de la note
-        if (_currentNote.bannerPath != null)
-          Container(
-            height: 135,
-            width: double.infinity,
-            child: Image.file(
-              File(_currentNote.bannerPath!),
-              key: ValueKey(DateTime.now().millisecondsSinceEpoch),
-              fit: BoxFit.cover,
-              alignment: _currentNote.bannerAlignment.toFlutterAlignment(),
-            ),
-          ),
-
-        // Zone d'édition avec marges latérales
         Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 64, // marge gauche/droite
-              vertical: 24,   // marge haut/bas
-            ),
-            child: QuillEditor.basic(
-              controller: _quillController,
-              config: QuillEditorConfig(
-                embedBuilders: FlutterQuillEmbeds.editorBuilders(),
-              ),
-            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final bool hasBanner = _currentNote.bannerPath != null;
+              // Hauteur minimale de l'éditeur : le reste de l'écran sous
+              // la bannière, pour qu'un clic n'importe où sous le texte
+              // place bien le curseur.
+              final double editorMinHeight = math.max(
+                0,
+                constraints.maxHeight
+                    - (hasBanner ? kNoteBannerHeight : 0)
+                    - 2 * verticalPadding,
+              );
+
+              return SingleChildScrollView(
+                controller: _scrollController,
+                child: Column(
+                  children: [
+                    // Bannière de la note
+                    if (hasBanner)
+                      SizedBox(
+                        height: kNoteBannerHeight,
+                        width: double.infinity,
+                        child: Image.file(
+                          File(_currentNote.bannerPath!),
+                          key: ValueKey(DateTime.now().millisecondsSinceEpoch),
+                          fit: BoxFit.cover,
+                          alignment: _currentNote.bannerAlignment.toFlutterAlignment(),
+                        ),
+                      ),
+
+                    // Zone d'édition avec marges latérales
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 64,             // marge gauche/droite
+                        vertical: verticalPadding,  // marge haut/bas
+                      ),
+                      child: QuillEditor.basic(
+                        controller: _quillController,
+                        // MÊME contrôleur que le SingleChildScrollView :
+                        // l'éditeur ne défile plus lui-même (scrollable:
+                        // false), mais s'en sert pour faire défiler la page
+                        // et garder le curseur visible pendant la frappe.
+                        scrollController: _scrollController,
+                        config: QuillEditorConfig(
+                          scrollable: false,
+                          minHeight: editorMinHeight,
+                          embedBuilders: FlutterQuillEmbeds.editorBuilders(),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         ),
       ],

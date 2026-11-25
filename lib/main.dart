@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mythopolis/providers/note_provider.dart';
 import 'package:mythopolis/providers/page_provider.dart';
+import 'package:mythopolis/providers/photo_zone_provider.dart';
 import 'package:mythopolis/providers/settings_provider.dart';
 import 'package:mythopolis/providers/template_provider.dart';
 import 'package:mythopolis/providers/text_zone_provider.dart';
@@ -22,7 +23,8 @@ void main() {
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ChangeNotifierProvider(create: (_) => TemplateProvider()),
         ChangeNotifierProvider(create: (_) => PageProvider()),
-        ChangeNotifierProvider(create: (_) => TextZoneProvider())
+        ChangeNotifierProvider(create: (_) => TextZoneProvider()),
+        ChangeNotifierProvider(create: (_) => PhotoZoneProvider()),
          
       ],
       child: const MyApp(),

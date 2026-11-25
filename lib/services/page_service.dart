@@ -1,4 +1,5 @@
 import 'dart:isolate';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:mythopolis/models/crop_area.dart';
@@ -336,13 +337,7 @@ Uint8List? _processBackground(
   img.Image image = img.bakeOrientation(decoded);
 
   if (crop != null) {
-    image = img.copyCrop(
-      image,
-      x: crop.x,
-      y: crop.y,
-      width: crop.width,
-      height: crop.height,
-    );
+    image = _rotateAndCrop(image, crop);
   }
 
   final img.Image resized = img.copyResize(
@@ -352,4 +347,39 @@ Uint8List? _processBackground(
     interpolation: img.Interpolation.average,
   );
   return img.encodePng(resized);
+}
+
+/// Applique la zone choisie dans l'outil de recadrage (voir CropArea) :
+/// 1. fait pivoter toute l'image de crop.rotation degrés (sens horaire) ;
+/// 2. retrouve où se trouve le centre du cadre dans l'image pivotée ;
+/// 3. découpe un rectangle droit de la taille du cadre autour.
+img.Image _rotateAndCrop(img.Image image, CropArea crop) {
+  img.Image rotated = image;
+  if (crop.rotation % 360 != 0) {
+    // copyRotate agrandit l'image pour tout contenir ; le centre de
+    // l'image reste au centre.
+    rotated = img.copyRotate(
+      image,
+      angle: crop.rotation,
+      interpolation: img.Interpolation.linear,
+    );
+  }
+
+  // Centre du cadre, mesuré depuis le centre de l'image originale…
+  final double dx = crop.centerX - image.width / 2;
+  final double dy = crop.centerY - image.height / 2;
+  // …tourné du même angle, puis replacé depuis le centre de l'image pivotée.
+  final double radians = crop.rotation * math.pi / 180;
+  final double cos = math.cos(radians);
+  final double sin = math.sin(radians);
+  final double centerX = rotated.width / 2 + dx * cos - dy * sin;
+  final double centerY = rotated.height / 2 + dx * sin + dy * cos;
+
+  // Rectangle à découper, gardé dans l'image (arrondis)
+  final int width = crop.width.round().clamp(1, rotated.width);
+  final int height = crop.height.round().clamp(1, rotated.height);
+  final int x = (centerX - width / 2).round().clamp(0, rotated.width - width);
+  final int y = (centerY - height / 2).round().clamp(0, rotated.height - height);
+
+  return img.copyCrop(rotated, x: x, y: y, width: width, height: height);
 }

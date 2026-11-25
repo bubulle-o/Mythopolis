@@ -17,10 +17,20 @@ import 'package:mythopolis/providers/note_provider.dart';
 /// Ne contient PAS la zone d'édition — elle se branche sur n'importe
 /// quel QuillController. Réutilisable pour les notes, les fiches et
 /// les zones de texte des templates.
+///
+/// [formatOnly] à true : uniquement la mise en forme du texte (police,
+/// taille, couleur, gras, alignement…). Pas de lien, d'image, de liste,
+/// de titre ni d'annuler/refaire. Utilisé par les zones de texte des
+/// templates, où l'on règle le style sans toucher au contenu.
 class QuillToolbar extends StatefulWidget {
   final QuillController controller;
+  final bool formatOnly;
 
-  const QuillToolbar({super.key, required this.controller});
+  const QuillToolbar({
+    super.key,
+    required this.controller,
+    this.formatOnly = false,
+  });
 
   @override
   State<QuillToolbar> createState() => _QuillToolbarState();
@@ -108,6 +118,26 @@ class _QuillToolbarState extends State<QuillToolbar> {
   }
 
   Widget _buildToolbar(BuildContext context) {
+    return widget.formatOnly
+        ? _buildFormatOnlyToolbar()
+        : _buildFullToolbar(context);
+  }
+
+  /// Polices proposées dans les deux versions de la barre.
+  static const Map<String, String> _fontFamilies = {
+    'Cardo': 'Cardo',
+    'EB Garamond': 'EBGaramond',
+    'Cinzel': 'Cinzel',
+    'MedievalSharp': 'MedievalSharp',
+    'UnifrakturMaguntia': 'UnifrakturMaguntia',
+    'Pirata One': 'PirataOne',
+    'Orbitron': 'Orbitron',
+    'Audiowide': 'Audiowide',
+    'Lexend': 'Lexend',
+  };
+
+  /// Barre complète : notes et fiches (liens, images, listes…).
+  Widget _buildFullToolbar(BuildContext context) {
     return QuillSimpleToolbar(
       controller: controller,
       config: QuillSimpleToolbarConfig(
@@ -120,18 +150,56 @@ class _QuillToolbarState extends State<QuillToolbar> {
             onPressed: () => _showLinkPicker(context),
           ),
         ],
+        buttonOptions: const QuillSimpleToolbarButtonOptions(
+          fontFamily: QuillToolbarFontFamilyButtonOptions(items: _fontFamilies),
+        ),
+      ),
+    );
+  }
+
+  /// Barre "format seul" : zones de texte des templates.
+  Widget _buildFormatOnlyToolbar() {
+    return QuillSimpleToolbar(
+      controller: controller,
+      config: const QuillSimpleToolbarConfig(
+        // ── Ce qu'on garde : le style du texte ──
+        showFontFamily: true,
+        showFontSize: true,
+        showBoldButton: true,
+        showItalicButton: true,
+        showUnderLineButton: true,
+        showStrikeThrough: true,
+        showColorButton: true,
+        showBackgroundColorButton: true,
+        showClearFormat: true,
+        showAlignmentButtons: true,
+        showJustifyAlignment: false,
+
+        // ── Ce qu'on retire : contenu, structure, liens ──
+        showLink: false,
+        showInlineCode: false,
+        showCodeBlock: false,
+        showQuote: false,
+        showHeaderStyle: false,
+        showListNumbers: false,
+        showListBullets: false,
+        showListCheck: false,
+        showIndent: false,
+        showSubscript: false,
+        showSuperscript: false,
+        showSearchButton: false,
+        showUndo: false,
+        showRedo: false,
+
         buttonOptions: QuillSimpleToolbarButtonOptions(
-          fontFamily: QuillToolbarFontFamilyButtonOptions(
-            items: const {
-              'Cardo': 'Cardo',
-              'EB Garamond': 'EBGaramond',
-              'Cinzel': 'Cinzel',
-              'MedievalSharp': 'MedievalSharp',
-              'UnifrakturMaguntia': 'UnifrakturMaguntia',
-              'Pirata One': 'PirataOne',
-              'Orbitron': 'Orbitron',
-              'Audiowide': 'Audiowide',
-              'Lexend': 'Lexend',
+          fontFamily: QuillToolbarFontFamilyButtonOptions(items: _fontFamilies),
+          // Tailles en pixels du canvas (une page A4 fait 1240 px de large) :
+          // il faut des valeurs bien plus grandes que dans une note.
+          fontSize: QuillToolbarFontSizeButtonOptions(
+            items: {
+              '16': '16', '20': '20', '24': '24', '32': '32', '40': '40',
+              '48': '48', '64': '64', '80': '80', '96': '96', '128': '128',
+              'Défaut': '0',
             },
           ),
         ),
